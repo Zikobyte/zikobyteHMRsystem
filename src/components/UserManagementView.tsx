@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { apiFetch } from '../utils/api';
 import { User, UserRole } from '../types';
+import PatientDirectoryImportView from './PatientDirectoryImportView';
 import { 
   Users, 
   Plus, 
@@ -39,7 +40,8 @@ import {
   LogOut,
   ShieldCheck,
   ChevronDown,
-  Copy
+  Copy,
+  Upload
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -107,7 +109,7 @@ export default function UserManagementView({
   onTabChange,
   currentUser
 }: UserManagementViewProps) {
-  const [activeTab, setActiveTab] = useState<'users' | 'maintenance' | 'activity-log'>('users');
+  const [activeTab, setActiveTab] = useState<'users' | 'patient-imports' | 'maintenance' | 'activity-log'>('users');
   const [users, setUsers] = useState<User[]>([]);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
   const [search, setSearch] = useState('');
@@ -177,7 +179,7 @@ export default function UserManagementView({
     fetchServerStats();
   }, []);
 
-  const handleTabSwitch = (tab: 'users' | 'maintenance' | 'activity-log') => {
+  const handleTabSwitch = (tab: 'users' | 'patient-imports' | 'maintenance' | 'activity-log') => {
     setActiveTab(tab);
     if (onTabChange) {
       if (tab === 'users') onTabChange('users');
@@ -1085,6 +1087,18 @@ export default function UserManagementView({
           </button>
 
           <button
+            onClick={() => handleTabSwitch('patient-imports')}
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-black transition-all cursor-pointer ${
+              activeTab === 'patient-imports'
+                ? 'bg-teal-700 text-white shadow-xs'
+                : 'bg-teal-50 text-teal-800 border border-teal-200 hover:bg-teal-100'
+            }`}
+          >
+            <Upload className="h-4 w-4" />
+            <span>Import Directory</span>
+          </button>
+
+          <button
             onClick={() => handleTabSwitch('maintenance')}
             className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-black transition-all cursor-pointer ${
               activeTab === 'maintenance'
@@ -1389,6 +1403,10 @@ export default function UserManagementView({
             </div>
           </div>
         </div>
+      )}
+
+      {activeTab === 'patient-imports' && (
+        <PatientDirectoryImportView currentUser={currentUser} />
       )}
 
       {/* ========================================================================= */}
