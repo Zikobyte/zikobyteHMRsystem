@@ -1,6 +1,26 @@
 import { NotificationMsg } from '../types';
 
-export const API_BASE = '/api';
+const configuredApiBase = (import.meta.env.VITE_API_BASE_URL || '').trim().replace(/\/$/, '');
+export const API_BASE = configuredApiBase || '/api';
+
+function getWebSocketUrl(): string | null {
+  const configuredSocketUrl = (import.meta.env.VITE_WS_URL || '').trim();
+  if (configuredSocketUrl) {
+    return `${configuredSocketUrl.replace(/\/$/, '')}/ws`;
+  }
+
+  // Local development uses the combined Express/Vite server. A Netlify-only
+  // build has no backend unless an explicit production URL is configured.
+  if (!configuredApiBase && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+    return null;
+  }
+
+  const apiOrigin = new URL(API_BASE, window.location.origin);
+  apiOrigin.protocol = apiOrigin.protocol === 'https:' ? 'wss:' : 'ws:';
+  apiOrigin.pathname = '/ws';
+  apiOrigin.search = '';
+  return apiOrigin.toString();
+}
 
 export function isTokenExpired(token: string): boolean {
   try {
@@ -92,12 +112,12 @@ export class IntranetSocket {
   }
 
   private connect() {
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const host = window.location.host;
     const token = getAuthToken();
-    
+    const baseSocketUrl = getWebSocketUrl();
+    if (!baseSocketUrl) return;
+
     // Connect to websocket with token in query param if valid
-    const wsUrl = `${protocol}//${host}/ws${token ? `?token=${token}` : ''}`;
+    const wsUrl = `${baseSocketUrl}${token ? `?token=${encodeURIComponent(token)}` : ''}`;
     
     try {
       this.ws = new WebSocket(wsUrl);

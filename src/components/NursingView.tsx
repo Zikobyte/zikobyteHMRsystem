@@ -27,9 +27,16 @@ export type NursingSubTab = 'admitted-patients' | 'detained-patients' | 'nurse-d
 interface NursingViewProps {
   activeTab?: string;
   onTabChange?: (tab: string) => void;
+  onOpenRegisterPatient?: () => void;
+  onNavigateToReturningPatients?: () => void;
 }
 
-export default function NursingView({ activeTab = 'admitted-patients', onTabChange }: NursingViewProps) {
+export default function NursingView({
+  activeTab = 'admitted-patients',
+  onTabChange,
+  onOpenRegisterPatient,
+  onNavigateToReturningPatients,
+}: NursingViewProps) {
   // Normalize active tab
   const getInitialTab = (): NursingSubTab => {
     if (activeTab === 'detained-patients') return 'detained-patients';
@@ -113,6 +120,22 @@ export default function NursingView({ activeTab = 'admitted-patients', onTabChan
             <p className="text-xs text-slate-300 mt-1 max-w-2xl leading-relaxed">
               {currentNav.description}
             </p>
+          </div>
+
+          {/* Tab buttons */}
+          <div className="flex flex-wrap items-center justify-end gap-2 self-start md:self-auto">
+            <button
+              onClick={onNavigateToReturningPatients}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-black bg-white text-[#2A758C] hover:bg-slate-100 transition-all cursor-pointer shadow-sm whitespace-nowrap"
+            >
+              <Search className="h-4 w-4" /> Returning Patient
+            </button>
+            <button
+              onClick={onOpenRegisterPatient}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-black bg-[#38bdf8] text-slate-950 hover:bg-[#7dd3fc] transition-all cursor-pointer shadow-md whitespace-nowrap"
+            >
+              <Plus className="h-4 w-4" /> Register New Patient
+            </button>
           </div>
 
           {/* Tab buttons */}

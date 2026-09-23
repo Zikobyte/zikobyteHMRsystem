@@ -66,7 +66,6 @@ const tabToPathMap: Record<string, string> = {
   'activity-log': '/activity-log',
   it: '/it',
   settings: '/settings',
-  widgets: '/widgets',
 };
 
 const pathToTabMap: Record<string, string> = {
@@ -129,7 +128,6 @@ const pathToTabMap: Record<string, string> = {
   '/it/activity-log': 'activity-log',
   '/it': 'users',
   '/settings': 'settings',
-  '/widgets': 'widgets',
 };
 
 export default function App() {
@@ -204,7 +202,7 @@ export default function App() {
     if (u.role === 'Cashier' || u.department === 'Cashier' || u.department === 'Finance') return 'cashier';
     if (u.role === 'Pharmacist' || u.department === 'Pharmacy') return 'pharmacy';
     if (u.role === 'Nurse' || u.department === 'Nursing') return 'admitted-patients';
-    if (u.role === 'OPD Clerk' || u.role === 'Receptionist') return 'patients';
+    if (u.role === 'OPD Clerk' || u.role === 'Receptionist' || u.role === 'Records Officer' || u.department === 'OPD') return 'dashboard';
     if (u.role === 'Account Officer' || u.role === 'Accountant' || u.department === 'Accounts') return 'overview';
     if (u.role === 'HR Manager' || u.role === 'Human Resources' || u.department === 'Human Resources' || u.department === 'HR') return 'hr-dashboard';
     if (u.role === 'Eye Clinic' || u.department === 'Eye Clinic') return 'registered-patients';
@@ -266,12 +264,12 @@ export default function App() {
                 handleSetActiveTab('patients');
               }
             }} 
+            onNavigateToReturningPatients={() => {
+              handleSetActiveTab('patients-returning');
+            }}
             onOpenRegisterPatient={() => {
               setOpenPatientRegistration(true);
               handleSetActiveTab('patients');
-            }}
-            onNavigateToEyeClinic={() => {
-              handleSetActiveTab('eye-clinic');
             }}
             onNavigateToStandardCards={() => {
               handleSetActiveTab('standard-cards');
@@ -293,7 +291,15 @@ export default function App() {
           activeTab === 'nurse-dispensing' ||
           activeTab === 'injection-records' ||
           activeTab === 'nursing') && (
-          <NursingView activeTab={activeTab} onTabChange={handleSetActiveTab} />
+          <NursingView
+            activeTab={activeTab}
+            onTabChange={handleSetActiveTab}
+            onOpenRegisterPatient={() => {
+              setOpenPatientRegistration(true);
+              handleSetActiveTab('patients');
+            }}
+            onNavigateToReturningPatients={() => handleSetActiveTab('patients-returning')}
+          />
         )}
         {activeTab === 'triage' && <OPDRegistrationView activeTab={activeTab} />}
         {(activeTab === 'eye-clinic' || activeTab === 'registered-patients' || activeTab === 'consultation' || activeTab === 'all-records') && (

@@ -28,6 +28,7 @@ import {
   Users,
   MapPin,
   UserPlus,
+  UserCheck,
   Eye,
   Trash2,
   AlertTriangle,
@@ -251,7 +252,7 @@ export default function OPDRegistrationView({
         const parsed = JSON.parse(saved);
         setCurrentUser(parsed);
         // Set default view based on role
-        if (parsed.role === 'Nurse') {
+        if (parsed.role === 'Nurse' && !activeTab?.startsWith('patients')) {
           setActiveSubTab('nursing');
         } else if (parsed.role === 'Receptionist' || parsed.role === 'Records Officer') {
           setActiveSubTab('reception');
@@ -1802,6 +1803,20 @@ export default function OPDRegistrationView({
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setActiveSubTab('returning')}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-black bg-[#2A758C] text-white hover:bg-[#205b6d] transition-all cursor-pointer shadow-sm whitespace-nowrap"
+            >
+              <UserCheck className="h-4 w-4" /> Returning Patient
+            </button>
+            <button
+              onClick={() => handleOpenRegister('standard')}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-black bg-[#E94B61] text-white hover:bg-[#c83d50] transition-all cursor-pointer shadow-sm whitespace-nowrap"
+            >
+              <UserPlus className="h-4 w-4" /> Register New Patient
+            </button>
+          </div>
           {/* TOP LEVEL VIEW SELECTOR FOR ADMINS/DOCTORS */}
           <div className="department-page-nav flex bg-slate-50 border border-slate-100 p-1.5 rounded-2xl gap-1">
             {currentUser?.role !== 'Nurse' && (

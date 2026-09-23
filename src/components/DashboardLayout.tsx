@@ -21,7 +21,6 @@ import {
   HelpCircle,
   FileText,
   Activity,
-  Layers,
   Sparkles,
   X,
   Info,
@@ -282,7 +281,6 @@ export default function DashboardLayout({
     {
       title: 'System Settings',
       items: [
-        { id: 'widgets', label: 'Reference Modules', icon: <Layers className="h-4.5 w-4.5" />, allowedRoles: ['Administrator', 'IT Administrator', 'Management', 'Doctor', 'Nurse', 'Pharmacist', 'Laboratory Scientist', 'Lab Technician', 'Cashier', 'Receptionist', 'Records Officer', 'OPD Clerk'] },
         { id: 'settings', label: 'System Settings', icon: <Settings className="h-4.5 w-4.5" />, allowedRoles: ['Administrator', 'IT Administrator', 'Management'] },
       ]
     }

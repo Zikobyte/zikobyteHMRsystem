@@ -1,7 +1,7 @@
 import { User } from '../types';
 
 export const ALL_NAVIGATION_IDS = [
-  'dashboard', 'patients', 'records', 'widgets', 'consult', 'nursing', 'lab', 'pharmacy',
+  'dashboard', 'patients', 'records', 'consult', 'nursing', 'lab', 'pharmacy',
   'pharmacy-stock', 'procurement', 'cashier', 'cashier-outstanding', 'cashier-pv',
   'cashier-no-charge', 'cashier-maternity-supplies', 'cashier-discounts', 'cashier-lab-payments',
   'cashier-walkin-verify', 'cashier-iclinic-registrations', 'overview',
@@ -15,11 +15,11 @@ export const ALL_NAVIGATION_IDS = [
 export type NavigationId = (typeof ALL_NAVIGATION_IDS)[number];
 
 const navigationByDepartment: Record<string, readonly NavigationId[]> = {
-  opd: ['dashboard', 'patients', 'records', 'widgets'],
-  doctor: ['consult', 'patients', 'nursing', 'records', 'lab', 'pharmacy', 'widgets'],
-  nurse: ['admitted-patients', 'detained-patients', 'nurse-dispensing', 'injection-records', 'dashboard'],
-  laboratory: ['lab', 'lab-walkin', 'widgets'],
-  pharmacy: ['pharmacy', 'pharmacy-stock', 'procurement', 'widgets'],
+  opd: ['dashboard', 'patients', 'records'],
+  doctor: ['consult', 'patients', 'nursing', 'records', 'lab', 'pharmacy'],
+  nurse: ['admitted-patients', 'detained-patients', 'nurse-dispensing', 'injection-records', 'dashboard', 'patients'],
+  laboratory: ['lab', 'lab-walkin'],
+  pharmacy: ['pharmacy', 'pharmacy-stock', 'procurement'],
   cashier: ['cashier', 'cashier-lab-payments', 'cashier-iclinic-registrations', 'cashier-walkin-verify', 'cashier-outstanding', 'cashier-pv', 'cashier-no-charge', 'cashier-maternity-supplies', 'cashier-discounts'],
   finance: ['overview', 'doctors', 'lab-technicians', 'pharmacists', 'procurement', 'outstanding', 'discounts'],
   eye: ['registered-patients', 'consultation', 'all-records', 'dashboard'],

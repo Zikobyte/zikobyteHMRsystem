@@ -1,10 +1,10 @@
 import express from 'express';
 import http from 'http';
-import path from 'path';
 import cors from 'cors';
 import crypto from 'crypto';
 import { WebSocketServer, WebSocket } from 'ws';
 import jwt from 'jsonwebtoken';
+import path from 'path';
 import { createServer as createViteServer } from 'vite';
 
 // Utilities & Repos
@@ -23,7 +23,7 @@ import { hrRoutes } from './src/backend/routes/hr/hr.routes';
 import nursingRoutes from './src/backend/routes/nursing/nursing.routes';
 import { JWT_SECRET } from './src/backend/config/env';
 
-const PORT = 3000;
+const PORT = Number(process.env.PORT || 3000);
 
 async function startServer() {
   const app = express();
@@ -482,7 +482,7 @@ async function startServer() {
     });
   });
 
-  // 4. Vite Dev Server vs Static Production serving
+  // 4. Vite serves the React UI in development; production serves the built SPA.
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({
       server: { middlewareMode: true, hmr: false },
