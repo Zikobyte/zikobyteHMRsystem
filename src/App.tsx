@@ -18,6 +18,7 @@ import PharmacyView from './components/PharmacyView';
 import HRDashboardView from './components/HRDashboardView';
 import NursingView from './components/NursingView';
 import NotificationCenter from './components/NotificationCenter';
+import PatientDirectoryImportView from './components/PatientDirectoryImportView';
 import { isTokenExpired, socketManager } from './utils/api';
 import { isNavigationAllowed } from './config/navigation';
 
@@ -64,6 +65,7 @@ const tabToPathMap: Record<string, string> = {
   users: '/users',
   maintenance: '/maintenance',
   'activity-log': '/activity-log',
+  'patient-directory-import': '/it/patient-import',
   it: '/it',
   settings: '/settings',
 };
@@ -126,6 +128,7 @@ const pathToTabMap: Record<string, string> = {
   '/it/maintenance': 'maintenance',
   '/activity-log': 'activity-log',
   '/it/activity-log': 'activity-log',
+  '/it/patient-import': 'patient-directory-import',
   '/it': 'users',
   '/settings': 'settings',
 };
@@ -324,6 +327,7 @@ export default function App() {
         )}
         {activeTab === 'records' && <OPDRegistrationView activeTab={activeTab} />}
         {activeTab === 'settings' && <OPDRegistrationView activeTab={activeTab} />}
+        {activeTab === 'patient-directory-import' && <PatientDirectoryImportView currentUser={user} />}
         {(activeTab === 'users' || activeTab === 'maintenance' || activeTab === 'activity-log' || activeTab === 'it') && (
           <UserManagementView
             activeSubTab={activeTab}

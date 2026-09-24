@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Download, Check, AlertTriangle, FileSpreadsheet, FileText, FileDown, CloudLightning, RefreshCw, X } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
+import { API_BASE, getAuthToken } from '../utils/api';
 
 interface ExportButtonProps {
   exportType: 'patients' | 'financials' | 'medical-records' | 'invoice' | 'receipt' | 'audit-logs';
@@ -95,7 +96,7 @@ export default function ExportButton({
       setProgress(60);
       setStepDescription('Assembling clinical data sheets & generating binary streams...');
 
-      const token = localStorage.getItem('zmc_token');
+      const token = getAuthToken();
       const queryParams = new URLSearchParams({
         type: exportType,
         format,
@@ -108,7 +109,7 @@ export default function ExportButton({
         ...(endDate && { endDate })
       }).toString();
 
-      const response = await fetch(`/api/exports?${queryParams}`, {
+      const response = await fetch(`${API_BASE}/exports?${queryParams}`, {
         headers: {
           'Authorization': `Bearer ${token}`
         },

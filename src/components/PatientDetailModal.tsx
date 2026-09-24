@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { apiFetch } from '../utils/api';
+import { API_BASE, apiFetch, getAuthToken } from '../utils/api';
 import { Patient, Vitals, MaternityDetails, EmergencyDetails } from '../types';
 import ExportButton from './ExportButton';
 import { 
@@ -60,8 +60,8 @@ export default function PatientDetailModal({ isOpen, onClose, patient }: Patient
         window.print();
         return;
       }
-      const token = localStorage.getItem('zmc_auth_token');
-      const res = await fetch(`/api/exports?type=medical-records&format=pdf&patientId=${encodeURIComponent(pid)}`, {
+      const token = getAuthToken();
+      const res = await fetch(`${API_BASE}/exports?type=medical-records&format=pdf&patientId=${encodeURIComponent(pid)}`, {
         headers: {
           ...(token ? { 'Authorization': `Bearer ${token}` } : {})
         }

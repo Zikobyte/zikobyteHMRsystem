@@ -7,6 +7,17 @@ import { jsPDF } from 'jspdf';
 
 const router = Router();
 
+function formatDateOnly(value: unknown): string {
+  if (value === null || value === undefined || value === '') return 'N/A';
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? 'N/A' : value.toISOString().slice(0, 10);
+  }
+
+  const text = String(value);
+  const parsed = new Date(text);
+  return Number.isNaN(parsed.getTime()) ? text.split('T')[0] : parsed.toISOString().slice(0, 10);
+}
+
 router.use(authenticateJWT as any);
 
 // Define Helper: Audit Log Recorder
@@ -319,7 +330,7 @@ router.get('/', async (req: AuthenticatedRequest, res: Response) => {
           'Hospital Number': p.hospital_number,
           'Full Name': p.name,
           'Gender': p.gender,
-          'Date of Birth': p.date_of_birth ? p.date_of_birth.split('T')[0] : 'N/A',
+          'Date of Birth': formatDateOnly(p.date_of_birth),
           'Phone Number': p.phone_number || 'N/A',
           'Amount Paid (₦)': parseFloat(p.card_fee || p.amount_paid || 3000),
           'Amount Paid': `₦${parseFloat(p.card_fee || p.amount_paid || 3000).toLocaleString()}`,
@@ -328,7 +339,7 @@ router.get('/', async (req: AuthenticatedRequest, res: Response) => {
           'Card Type': p.card_type,
           'Current Status': p.status,
           'Registered By': p.registered_by || 'Staff',
-          'Registration Date': p.registration_date ? p.registration_date.split('T')[0] : 'N/A'
+          'Registration Date': formatDateOnly(p.registration_date)
         }));
         const ws = XLSX.utils.json_to_sheet(formatted);
         ws['!cols'] = [ {wch: 15}, {wch: 25}, {wch: 10}, {wch: 12}, {wch: 15}, {wch: 15}, {wch: 15}, {wch: 25}, {wch: 12}, {wch: 12}, {wch: 20}, {wch: 15}, {wch: 15} ];
@@ -356,11 +367,11 @@ router.get('/', async (req: AuthenticatedRequest, res: Response) => {
           'Hospital Number': p.hospital_number || p.id,
           'Patient Name': p.name,
           'Gender': p.gender || 'N/A',
-          'DOB': p.date_of_birth ? p.date_of_birth.split('T')[0] : 'N/A',
+          'DOB': formatDateOnly(p.date_of_birth),
           'Phone': p.phone_number || 'N/A',
           'Address': p.address || 'N/A',
           'Current Status': p.status || 'Active',
-          'Registration Date': p.registration_date ? p.registration_date.split('T')[0] : 'N/A',
+          'Registration Date': formatDateOnly(p.registration_date),
         }]);
         wsProfile['!cols'] = [{ wch: 15 }, { wch: 25 }, { wch: 10 }, { wch: 12 }, { wch: 15 }, { wch: 25 }, { wch: 15 }, { wch: 15 }];
         XLSX.utils.book_append_sheet(wb, wsProfile, 'Patient Profile');
@@ -512,10 +523,10 @@ router.get('/', async (req: AuthenticatedRequest, res: Response) => {
           new Paragraph({ text: '1. PATIENT DEMOGRAPHICS & PROFILE', heading: HeadingLevel.HEADING_3 }),
           new Paragraph({ children: [new TextRun({ text: 'Patient Full Name: ', bold: true }), new TextRun(p.name || 'N/A')] }),
           new Paragraph({ children: [new TextRun({ text: 'Hospital Number: ', bold: true }), new TextRun(p.hospital_number || p.id || 'N/A')] }),
-          new Paragraph({ children: [new TextRun({ text: 'Gender / DOB: ', bold: true }), new TextRun(`${p.gender || 'N/A'} / ${p.date_of_birth ? p.date_of_birth.split('T')[0] : 'N/A'}`)] }),
+          new Paragraph({ children: [new TextRun({ text: 'Gender / DOB: ', bold: true }), new TextRun(`${p.gender || 'N/A'} / ${formatDateOnly(p.date_of_birth)}`)] }),
           new Paragraph({ children: [new TextRun({ text: 'Phone Number: ', bold: true }), new TextRun(p.phone_number || 'N/A')] }),
           new Paragraph({ children: [new TextRun({ text: 'Residential Address: ', bold: true }), new TextRun(p.address || 'N/A')] }),
-          new Paragraph({ children: [new TextRun({ text: 'Registration Date / Officer: ', bold: true }), new TextRun(`${p.registration_date ? p.registration_date.split('T')[0] : 'N/A'} / ${p.registered_by || 'Staff'}`)] }),
+          new Paragraph({ children: [new TextRun({ text: 'Registration Date / Officer: ', bold: true }), new TextRun(`${formatDateOnly(p.registration_date)} / ${p.registered_by || 'Staff'}`)] }),
           new Paragraph({ children: [new TextRun({ text: 'Clinical Status: ', bold: true }), new TextRun(p.status || 'Active')] }),
           new Paragraph({ text: '' }),
 
@@ -736,7 +747,7 @@ router.get('/', async (req: AuthenticatedRequest, res: Response) => {
         doc.text(`Hospital Number: ${p.hospital_number}`, 120, currentY);
         currentY += 5;
         doc.text(`Gender: ${p.gender}`, 15, currentY);
-        doc.text(`Date of Birth: ${p.date_of_birth ? p.date_of_birth.split('T')[0] : 'N/A'}`, 120, currentY);
+          doc.text(`Date of Birth: ${formatDateOnly(p.date_of_birth)}`, 120, currentY);
         currentY += 5;
         doc.text(`Phone Number: ${p.phone_number || 'N/A'}`, 15, currentY);
         doc.text(`Residential Address: ${p.address || 'N/A'}`, 120, currentY);

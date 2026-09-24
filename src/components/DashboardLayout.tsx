@@ -39,6 +39,7 @@ import {
   Stethoscope,
   ShoppingBag,
   Boxes,
+  FileSpreadsheet,
   CreditCard,
   Percent,
   Syringe,
@@ -311,6 +312,12 @@ export default function DashboardLayout({
           label: 'Activity Log',
           icon: <Activity className="h-4.5 w-4.5" />,
           allowedRoles: ['IT Administrator', 'Administrator', 'Management', 'Account Officer', 'Doctor', 'Nurse', 'Receptionist', 'Records Officer', 'Cashier', 'Pharmacist', 'Laboratory Scientist', 'Accountant', 'Eye Clinic'],
+        },
+        {
+          id: 'patient-directory-import',
+          label: 'Patient Directory Import',
+          icon: <FileSpreadsheet className="h-4.5 w-4.5" />,
+          allowedRoles: ['IT Administrator', 'Administrator', 'Management'],
         }
       ]
     },

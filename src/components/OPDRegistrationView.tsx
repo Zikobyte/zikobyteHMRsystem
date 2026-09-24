@@ -1374,14 +1374,15 @@ export default function OPDRegistrationView({
       return `"${cleaned}"`;
     }).join(','))].join('\n');
 
-    const blob = new Blob([csvContent], { type: 'application/octet-stream' });
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.setAttribute('download', `ZMC_Patients_List_${new Date().toISOString().split('T')[0]}.csv`);
+    link.download = `ZMC_Patients_List_${new Date().toISOString().split('T')[0]}.csv`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    window.setTimeout(() => URL.revokeObjectURL(url), 0);
     setIsDownloadDropdownOpen(false);
     setSuccess('Downloaded Excel CSV registry successfully.');
   };
@@ -1470,14 +1471,15 @@ export default function OPDRegistrationView({
       </html>
     `;
 
-    const blob = new Blob(['\ufeff' + docHtml], { type: 'application/octet-stream' });
+    const blob = new Blob(['\ufeff' + docHtml], { type: 'application/msword' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.setAttribute('download', `ZMC_Patients_Registry_${new Date().toISOString().split('T')[0]}.doc`);
+    link.download = `ZMC_Patients_Registry_${new Date().toISOString().split('T')[0]}.doc`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    window.setTimeout(() => URL.revokeObjectURL(url), 0);
     setIsDownloadDropdownOpen(false);
     setSuccess('Downloaded Google Doc registry report successfully.');
   };
@@ -2136,7 +2138,20 @@ export default function OPDRegistrationView({
                     filteredPatients.map((patient, idx) => {
                       const age = getAge(patient.dateOfBirth);
                       return (
-                        <tr key={`${patient.id}-${idx}`} className="text-[11px] hover:bg-slate-50/50 transition-colors">
+                        <tr
+                          key={`${patient.id}-${idx}`}
+                          onClick={() => setSelectedDetailPatient(patient)}
+                          onKeyDown={(event) => {
+                            if (event.key === 'Enter' || event.key === ' ') {
+                              event.preventDefault();
+                              setSelectedDetailPatient(patient);
+                            }
+                          }}
+                          tabIndex={0}
+                          role="button"
+                          aria-label={`View full details for ${patient.name}`}
+                          className="text-[11px] hover:bg-slate-50/50 focus:bg-slate-50/50 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-[#2A758C]/40 transition-colors cursor-pointer"
+                        >
                           <td className="p-2.5 font-mono font-bold text-[#2A758C]">{patient.hospitalNumber}</td>
                           <td className="p-2.5">
                             <p className="font-bold text-slate-800">{patient.name}</p>
@@ -2153,7 +2168,7 @@ export default function OPDRegistrationView({
                               {patient.status}
                             </span>
                           </td>
-                          <td className="p-2.5 text-right space-x-1.5 flex items-center justify-end">
+                          <td className="p-2.5 text-right space-x-1.5 flex items-center justify-end" onClick={(event) => event.stopPropagation()}>
                             <button
                               onClick={() => handleOpenEncounter(patient)}
                               className="px-2.5 py-1 bg-[#A3D1E0]/15 hover:bg-[#A3D1E0]/30 text-[#2a758c] font-bold rounded-lg text-[10px] transition-colors cursor-pointer inline-flex items-center gap-1"

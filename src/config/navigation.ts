@@ -5,18 +5,18 @@ export const ALL_NAVIGATION_IDS = [
   'pharmacy-stock', 'procurement', 'cashier', 'cashier-outstanding', 'cashier-pv',
   'cashier-no-charge', 'cashier-maternity-supplies', 'cashier-discounts', 'cashier-lab-payments',
   'cashier-walkin-verify', 'cashier-iclinic-registrations', 'overview',
-  'doctors', 'lab-technicians', 'pharmacists', 'outstanding', 'discounts', 'lab-walkin',
+  'doctors', 'standard-cards', 'specialized-care', 'lab-technicians', 'pharmacists', 'outstanding', 'discounts', 'lab-walkin',
   'registered-patients', 'consultation', 'all-records', 'admitted-patients',
   'detained-patients', 'nurse-dispensing', 'injection-records', 'hr-dashboard',
   'hr-employees', 'hr-absences', 'hr-recruitment', 'hr-procurement', 'hr-discounts',
-  'users', 'maintenance', 'activity-log', 'settings',
+  'users', 'maintenance', 'activity-log', 'patient-directory-import', 'settings',
 ] as const;
 
 export type NavigationId = (typeof ALL_NAVIGATION_IDS)[number];
 
 const navigationByDepartment: Record<string, readonly NavigationId[]> = {
-  opd: ['dashboard', 'patients', 'records'],
-  doctor: ['consult', 'patients', 'nursing', 'records', 'lab', 'pharmacy'],
+  opd: ['dashboard', 'patients', 'records', 'standard-cards', 'specialized-care'],
+  doctor: ['consult', 'patients', 'nursing', 'records', 'lab', 'pharmacy', 'standard-cards', 'specialized-care'],
   nurse: ['admitted-patients', 'detained-patients', 'nurse-dispensing', 'injection-records', 'dashboard', 'patients'],
   laboratory: ['lab', 'lab-walkin'],
   pharmacy: ['pharmacy', 'pharmacy-stock', 'procurement'],
@@ -24,7 +24,7 @@ const navigationByDepartment: Record<string, readonly NavigationId[]> = {
   finance: ['overview', 'doctors', 'lab-technicians', 'pharmacists', 'procurement', 'outstanding', 'discounts'],
   eye: ['registered-patients', 'consultation', 'all-records', 'dashboard'],
   hr: ['hr-dashboard', 'hr-employees', 'hr-absences', 'hr-recruitment', 'hr-procurement', 'hr-discounts', 'dashboard'],
-  it: ['users', 'maintenance', 'activity-log', 'dashboard', 'settings'],
+  it: ['users', 'maintenance', 'activity-log', 'patient-directory-import', 'dashboard', 'settings'],
 };
 
 function getDepartmentKey(user: User): keyof typeof navigationByDepartment | 'all' {
