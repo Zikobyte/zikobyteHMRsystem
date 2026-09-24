@@ -132,7 +132,7 @@ export default function NursingView({
             </button>
             <button
               onClick={onOpenRegisterPatient}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-black bg-[#38bdf8] text-slate-950 hover:bg-[#7dd3fc] transition-all cursor-pointer shadow-md whitespace-nowrap"
+              className="flex items-center gap-2 px-4 py-2.5 rounded-none text-xs font-black bg-green-700 text-white hover:bg-green-800 transition-all cursor-pointer whitespace-nowrap"
             >
               <Plus className="h-4 w-4" /> Register New Patient
             </button>

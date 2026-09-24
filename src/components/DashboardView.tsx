@@ -263,7 +263,7 @@ export default function DashboardView({
           {user?.role !== 'Doctor' && (
             <button
               onClick={onOpenRegisterPatient || onNavigateToPatients}
-              className="flex items-center gap-2 bg-[#2A758C] hover:bg-[#205b6d] text-white font-extrabold px-5 py-2.5 rounded-2xl text-xs transition-all shadow-md shadow-[#2A758C]/20 hover:scale-[1.02] cursor-pointer"
+              className="flex items-center gap-2 bg-green-700 hover:bg-green-800 text-white font-extrabold px-5 py-2.5 rounded-none text-xs transition-all cursor-pointer"
             >
               <UserPlus className="h-4 w-4" /> Register New Patient
             </button>

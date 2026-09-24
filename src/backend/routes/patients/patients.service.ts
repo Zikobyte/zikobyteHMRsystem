@@ -49,8 +49,8 @@ export class PatientsService {
 
     const patientToSave = {
       ...patientData,
-      cardFee,
-      registeredBy: registrarUsername,
+      cardFee: patientData.cardFee !== undefined ? Number(patientData.cardFee) || 0 : cardFee,
+      registeredBy: patientData.registeredBy || registrarUsername,
     };
 
     return this.repo.create(patientToSave);

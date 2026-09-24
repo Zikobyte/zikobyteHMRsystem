@@ -1814,7 +1814,7 @@ export default function OPDRegistrationView({
             </button>
             <button
               onClick={() => handleOpenRegister('standard')}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-black bg-[#E94B61] text-white hover:bg-[#c83d50] transition-all cursor-pointer shadow-sm whitespace-nowrap"
+              className="flex items-center gap-2 px-4 py-2.5 rounded-none text-xs font-black bg-green-700 text-white hover:bg-green-800 transition-all cursor-pointer whitespace-nowrap"
             >
               <UserPlus className="h-4 w-4" /> Register New Patient
             </button>

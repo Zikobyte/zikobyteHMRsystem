@@ -149,7 +149,9 @@ export class PatientsRepository {
 
   public async create(patient: any): Promise<any> {
     const id = generateUUID();
-    const hospitalNumber = await this.getNextHospitalNumber();
+    const hospitalNumber = (patient.hospitalNumber && String(patient.hospitalNumber).trim())
+      ? String(patient.hospitalNumber).trim()
+      : await this.getNextHospitalNumber();
     let maternityNumber = null;
     if (patient.cardType === 'Maternity') {
       maternityNumber = hospitalNumber.replace('ZMC', 'MAT');
@@ -178,7 +180,7 @@ export class PatientsRepository {
       patient.cardFee || 0,
       patient.status || 'Triage Pending',
       patient.registeredBy || null,
-      new Date().toISOString(),
+      patient.registrationDate ? new Date(patient.registrationDate).toISOString() : new Date().toISOString(),
       patient.idType || null,
       patient.idNumber || null,
       patient.nextOfKinName || null,
