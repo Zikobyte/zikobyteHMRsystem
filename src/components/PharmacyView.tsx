@@ -434,7 +434,7 @@ export default function PharmacyView({ activeTab: parentActiveTab, onTabChange }
     setProcurementFormRows(prev => prev.map(r => r.id === id ? { ...r, [field]: value } : r));
   };
 
-  const handleSubmitProcurement = (e: React.FormEvent) => {
+  const handleSubmitProcurement = async (e: React.FormEvent) => {
     e.preventDefault();
     setProcurementSuccess('');
 
@@ -463,6 +463,27 @@ export default function PharmacyView({ activeTab: parentActiveTab, onTabChange }
 
     const now = new Date();
     const formattedDate = `${now.toLocaleDateString('en-GB')}, ${now.toLocaleTimeString()}`;
+
+    const savedUser = localStorage.getItem('zmc_user');
+    const requestedBy = savedUser ? (JSON.parse(savedUser)?.name || JSON.parse(savedUser)?.username) : undefined;
+
+    try {
+      await Promise.all(validItems.map(item => apiFetch('/hr/procurements', {
+        method: 'POST',
+        body: JSON.stringify({
+          item_name: item.name,
+          quantity: item.quantity,
+          unit_price: item.unitPrice,
+          amount: item.totalPrice,
+          department: 'Pharmacy',
+          requested_by: requestedBy || 'Pharmacy Desk',
+          status: 'Pending',
+          category: 'Pharmacy Procurement'
+        })
+      })));
+    } catch (err: any) {
+      console.error('Failed to submit procurement request to HR/Account Office:', err);
+    }
 
     const newRequest: ProcurementRequest = {
       id: reqId,
@@ -530,7 +551,12 @@ export default function PharmacyView({ activeTab: parentActiveTab, onTabChange }
 
   // Dispense Admitted Order
   const handleDispenseAdmittedOrder = (id: string) => {
+    const order = admittedOrders.find(o => o.id === id);
     setAdmittedOrders(prev => prev.map(o => o.id === id ? { ...o, status: 'Dispensed' } : o));
+    if (order) {
+      setDispenseSuccess(`Ward medications for ${order.patientName} (${order.ward} • ${order.bedNumber}) dispensed and released to the ward nurse!`);
+      setTimeout(() => setDispenseSuccess(''), 5000);
+    }
   };
 
   return (

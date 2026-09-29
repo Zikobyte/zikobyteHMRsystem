@@ -1279,9 +1279,9 @@ export class PatientsRepository {
         testNames.push(`${testName} (₦${testPrice.toLocaleString()})`);
 
         await query(`
-          INSERT INTO zmc_laboratory_orders (id, patient_id, encounter_id, doctor_id, test_name, status, date_ordered)
-          VALUES ($1, $2, $3, (SELECT id FROM zmc_users WHERE username = $4 LIMIT 1), $5, 'Pending', NOW())
-        `, [generateUUID(), patientId, encounterId, completedBy, testName]);
+          INSERT INTO zmc_laboratory_orders (id, patient_id, encounter_id, doctor_id, test_name, status, date_ordered, price, category)
+          VALUES ($1, $2, $3, (SELECT id FROM zmc_users WHERE username = $4 LIMIT 1), $5, 'Pending', NOW(), $6, $7)
+        `, [generateUUID(), patientId, encounterId, completedBy, testName, testPrice, test.category || null]);
       }
 
       // Create unpaid system invoice with total laboratory amount

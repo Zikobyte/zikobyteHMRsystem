@@ -49,6 +49,7 @@ const tabToPathMap: Record<string, string> = {
   doctors: '/doctors',
   'standard-cards': '/doctors/standard-cards',
   'specialized-care': '/doctors/specialized-care',
+  'doctor-admitted': '/doctors/admitted',
   lab: '/lab',
   'lab-walkin': '/lab/walkin',
   'lab-technicians': '/lab',
@@ -105,6 +106,7 @@ const pathToTabMap: Record<string, string> = {
   '/doctors/specialized-care': 'specialized-care',
   '/standard-cards': 'standard-cards',
   '/specialized-care': 'specialized-care',
+  '/doctors/admitted': 'doctor-admitted',
   '/lab': 'lab',
   '/lab/walkin': 'lab-walkin',
   '/lab-technicians': 'lab-technicians',
@@ -308,7 +310,7 @@ export default function App() {
         {(activeTab === 'eye-clinic' || activeTab === 'registered-patients' || activeTab === 'consultation' || activeTab === 'all-records') && (
           <EyeClinicView activeTab={activeTab} onTabChange={handleSetActiveTab} />
         )}
-        {(activeTab === 'consult' || activeTab === 'doctors' || activeTab === 'standard-cards' || activeTab === 'specialized-care') && (
+        {(activeTab === 'consult' || activeTab === 'doctors' || activeTab === 'standard-cards' || activeTab === 'specialized-care' || activeTab === 'doctor-admitted') && (
           <DoctorView 
             activeSubTab={
               activeTab === 'standard-cards' ? 'standard' :

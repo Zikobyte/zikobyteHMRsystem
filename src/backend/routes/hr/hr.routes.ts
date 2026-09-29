@@ -861,7 +861,7 @@ hrRoutes.get('/procurements', async (req: AuthenticatedRequest, res: Response) =
   }
 });
 
-hrRoutes.post('/procurements', authorizeRoles(['Administrator', 'IT Administrator', 'Management', 'HR Manager', 'Account Officer', 'Accountant']) as any, async (req: AuthenticatedRequest, res: Response) => {
+hrRoutes.post('/procurements', authorizeRoles(['Administrator', 'IT Administrator', 'Management', 'HR Manager', 'Account Officer', 'Accountant', 'Pharmacist']) as any, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { item_name, items, quantity, unit_price, amount, department, supplier_name, requested_by, status, date, category } = req.body;
     if (!item_name && !items) {

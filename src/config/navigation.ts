@@ -10,13 +10,14 @@ export const ALL_NAVIGATION_IDS = [
   'detained-patients', 'nurse-dispensing', 'injection-records', 'hr-dashboard',
   'hr-employees', 'hr-absences', 'hr-recruitment', 'hr-procurement', 'hr-discounts',
   'users', 'maintenance', 'activity-log', 'patient-directory-import', 'settings',
+  'doctor-admitted',
 ] as const;
 
 export type NavigationId = (typeof ALL_NAVIGATION_IDS)[number];
 
 const navigationByDepartment: Record<string, readonly NavigationId[]> = {
   opd: ['dashboard', 'patients', 'records', 'standard-cards', 'specialized-care'],
-  doctor: ['consult', 'patients', 'nursing', 'records', 'lab', 'pharmacy', 'standard-cards', 'specialized-care'],
+  doctor: ['consult', 'records', 'lab', 'pharmacy', 'standard-cards', 'specialized-care', 'doctor-admitted'],
   nurse: ['admitted-patients', 'detained-patients', 'nurse-dispensing', 'injection-records', 'dashboard', 'patients'],
   laboratory: ['lab', 'lab-walkin'],
   pharmacy: ['pharmacy', 'pharmacy-stock', 'procurement'],
@@ -63,6 +64,8 @@ export function isNavigationAllowed(user: User, navigationId: string): boolean {
     'iclinic-registrations': 'cashier-iclinic-registrations',
     'cashier-vitae': 'cashier-pv',
     'pharmacy-procurement': 'procurement',
+    'pharmacy-dispensing': 'pharmacy',
+    'pharmacy-admitted': 'pharmacy',
     dispensing: 'pharmacy',
     admitted: 'pharmacy',
     stock: 'pharmacy-stock',
