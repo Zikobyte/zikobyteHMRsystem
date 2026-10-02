@@ -5,5 +5,7 @@ declare module 'bun:test' {
     toBe(expected: unknown): void;
     toMatchObject(expected: Record<string, unknown>): void;
     toBeUndefined(): void;
+    toBeNull(): void;
+    toHaveLength(expected: number): void;
   };
 }
