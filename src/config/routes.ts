@@ -1,5 +1,7 @@
 import React from 'react';
 import type { ComponentType, LazyExoticComponent } from 'react';
+import type { User } from '../types';
+import { isNavigationAllowed } from './navigation';
 
 export type DepartmentKey =
   | 'all'
@@ -143,4 +145,66 @@ export function findRouteByPath(pathname: string): RouteMatch | undefined {
 
 export function listRouteEntries(): RouteEntry[] {
   return [...ROUTE_ENTRIES];
+}
+
+export function getAllowedTabs(user: User): ReadonlySet<string> {
+  const allowed = new Set<string>();
+  for (const entry of ROUTE_ENTRIES) {
+    if (isTabAllowed(user, entry.tab)) {
+      allowed.add(entry.tab);
+    }
+  }
+  return allowed;
+}
+
+export function isTabAllowed(user: User, tab: string): boolean {
+  const entry = entriesByTab.get(tab);
+  if (!entry) {
+    return false;
+  }
+  return isNavigationAllowed(user, tab);
+}
+
+export function getDefaultTab(user: User): string {
+  if (
+    user.role === 'Laboratory Scientist' ||
+    user.role === 'Lab Technician' ||
+    user.department === 'Laboratory'
+  )
+    return 'lab';
+  if (user.role === 'Doctor')
+    return user.department === 'Eye Clinic' ? 'registered-patients' : 'consult';
+  if (user.role === 'Cashier' || user.department === 'Cashier' || user.department === 'Finance')
+    return 'cashier';
+  if (user.role === 'Pharmacist' || user.department === 'Pharmacy') return 'pharmacy';
+  if (user.role === 'Nurse' || user.department === 'Nursing') return 'admitted-patients';
+  if (
+    user.role === 'OPD Clerk' ||
+    user.role === 'Receptionist' ||
+    user.role === 'Records Officer' ||
+    user.department === 'OPD'
+  )
+    return 'dashboard';
+  if (user.role === 'Account Officer' || user.role === 'Accountant' || user.department === 'Accounts')
+    return 'overview';
+  if (
+    user.role === 'HR Manager' ||
+    user.role === 'Human Resources' ||
+    user.department === 'Human Resources' ||
+    user.department === 'HR'
+  )
+    return 'hr-dashboard';
+  if (user.role === 'Eye Clinic' || user.department === 'Eye Clinic') return 'registered-patients';
+  if (user.role === 'IT Administrator' || user.department === 'IT' || user.username === 'admin')
+    return 'users';
+  return 'dashboard';
+}
+
+export function resolveInitialTab(pathname: string, user: User | null): string {
+  const match = findRouteByPath(pathname);
+  const tab = match ? match.tab : 'dashboard';
+  if (user && !isTabAllowed(user, tab)) {
+    return getDefaultTab(user);
+  }
+  return tab;
 }
