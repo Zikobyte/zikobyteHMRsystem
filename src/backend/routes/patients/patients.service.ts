@@ -49,7 +49,8 @@ export class PatientsService {
 
     const patientToSave = {
       ...patientData,
-      cardFee: patientData.cardFee !== undefined ? Number(patientData.cardFee) || 0 : cardFee,
+      // Server-authoritative fee — client cardFee NEVER trusted.
+      cardFee,
       registeredBy: patientData.registeredBy || registrarUsername,
     };
 

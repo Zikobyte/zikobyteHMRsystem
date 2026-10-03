@@ -1,7 +1,7 @@
 import { generateUUID, query } from '../database/db.repo';
 
 export interface PricingReviewInput {
-  kind: 'lab' | 'medication';
+  kind: 'lab' | 'medication' | 'eye';
   code: string | null;
   name: string;
   patientId?: string | null;

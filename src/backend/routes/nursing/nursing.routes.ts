@@ -1230,7 +1230,8 @@ nursingRoutes.post('/admissions/:id/maternity-checklist', async (req: Authentica
   try {
     ensureNursingSeed();
     const { id } = req.params;
-    const { items, billedItems, totalAmount } = req.body;
+    const { items, billedItems } = req.body;
+    // NOTE: client totalAmount is NEVER trusted — server recomputes from billedItems.
     const db = getDB() as any;
 
     const patient = (db.admissions || []).find((a: any) => a.id === id || a.hospital_number === id || a.patient_id === id);
@@ -1244,8 +1245,20 @@ nursingRoutes.post('/admissions/:id/maternity-checklist', async (req: Authentica
     // Save current items
     db.maternityChecklists[patient.id] = items;
 
+    // Server-authoritative total: validate + sum billedItems, ignore any client total.
+    const cleanBilledItems: { label: string; amount: number }[] = [];
+    if (Array.isArray(billedItems)) {
+      for (const bi of billedItems) {
+        const label = typeof bi?.label === 'string' ? bi.label.trim().slice(0, 255) : '';
+        const amt = Number(bi?.amount);
+        if (!label || !Number.isFinite(amt) || amt < 0) continue;
+        cleanBilledItems.push({ label, amount: Math.round(amt) });
+      }
+    }
+    const serverTotal = cleanBilledItems.reduce((sum, i) => sum + i.amount, 0);
+
     let handoverRecord = null;
-    if (totalAmount && totalAmount > 0) {
+    if (serverTotal > 0) {
       const nurseName = req.user?.username || req.user?.name || 'Nurse (Maternity Ward)';
 
       // 1. Add Charge to Nurse Billing
@@ -1253,8 +1266,8 @@ nursingRoutes.post('/admissions/:id/maternity-checklist', async (req: Authentica
         id: `bill-mat-${Date.now()}`,
         admission_id: patient.id,
         patient_id: patient.patient_id || patient.id,
-        item: `Maternity Ward Supplies (${billedItems?.length || 0} items provided)`,
-        amount: totalAmount,
+        item: `Maternity Ward Supplies (${cleanBilledItems?.length || 0} items provided)`,
+        amount: serverTotal,
         type: 'Charge',
         recorded_at: new Date().toLocaleString('en-GB'),
         date_sort: new Date().toISOString()
@@ -1262,7 +1275,7 @@ nursingRoutes.post('/admissions/:id/maternity-checklist', async (req: Authentica
       db.nurseBilling.push(billCharge);
 
       // Update patient's charged totals
-      patient.total_charged = (patient.total_charged || 0) + totalAmount;
+      patient.total_charged = (patient.total_charged || 0) + serverTotal;
       patient.outstanding_balance = Math.max(0, (patient.total_charged || 0) - (patient.payments_made || 0));
 
       // 2. Create or Update Handover record for Cashier Portal
@@ -1274,8 +1287,8 @@ nursingRoutes.post('/admissions/:id/maternity-checklist', async (req: Authentica
         hospital_number: patient.hospital_number || patient.id,
         ward: patient.ward || 'Maternity Ward',
         bed: patient.bed || 'M-3',
-        items: billedItems || [],
-        total_amount: totalAmount,
+        items: cleanBilledItems || [],
+        total_amount: serverTotal,
         status: 'Pending Handover',
         nurse_name: nurseName,
         created_at: new Date().toISOString(),
