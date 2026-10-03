@@ -3,9 +3,13 @@ declare module 'bun:test' {
   export function test(name: string, fn: () => void | Promise<void>): void;
   export function expect(received: unknown): {
     toBe(expected: unknown): void;
-    toMatchObject(expected: Record<string, unknown>): void;
+    toMatchObject(expected: unknown): void;
     toBeUndefined(): void;
     toBeNull(): void;
     toHaveLength(expected: number): void;
+    not: {
+      toBe(expected: unknown): void;
+      toBeNull(): void;
+    };
   };
 }

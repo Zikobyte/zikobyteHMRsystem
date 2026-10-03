@@ -1,4 +1,6 @@
 import { query, generateUUID, getPostgresStatus, getDB } from '../../database/db.repo';
+import { resolveLabTestPrice } from '../../catalogue/lab-catalogue';
+import { queuePricingReview } from '../../catalogue/pricing-review';
 
 async function populatePatientsWithRelationalData(rows: any[]): Promise<any[]> {
   if (rows.length === 0) return [];
@@ -428,12 +430,16 @@ export class PatientsRepository {
       `, [invoiceId, id, encounterId, totalBill, cashCollected >= totalBill ? 'Unconfirmed' : 'Unpaid', invoiceDescription]);
 
       // If initial cash was collected at OPD registration desk, record payment awaiting cashier audit
+      // Schema note (Phase 2 fix): zmc_payments has NO recorded_by/created_at/notes
+      // columns (real DDL in db.repo.ts: collected_by, date_paid + description, the
+      // latter added for idempotency/audit notes). Intent preserved 1:1 — collector
+      // in collected_by, timestamp in date_paid, handover note in description.
       if (cashCollected > 0) {
         const paymentId = generateUUID();
         try {
           await query(`
             INSERT INTO zmc_payments (
-              id, patient_id, encounter_id, invoice_id, amount, payment_method, status, recorded_by, created_at, notes
+              id, patient_id, encounter_id, invoice_id, amount, payment_method, status, collected_by, date_paid, description
             ) VALUES ($1, $2, $3, $4, $5, 'Cash', 'Unconfirmed', $6, NOW(), $7)
           `, [
             paymentId,
@@ -1233,55 +1239,55 @@ export class PatientsRepository {
     if (routeTo === 'lab' && orderedTests && orderedTests.length > 0) {
       let totalLabAmount = 0;
       const testNames: string[] = [];
-      const priceMap: { [key: string]: number } = {
-        'Liver Function Test (LFT)': 15000,
-        'Electrolyte, Urea, Creatinine (E/U/C)': 15000,
-        'Lipid Profile': 15000,
-        'Prostate Specific Antigen (PSA)': 18000,
-        'Cholesterol': 7000,
-        'Random Blood Sugar (RBS)': 1500,
-        'Fasting Blood Sugar (FBS)': 1500,
-        'Full Blood Count (FBC)': 7000,
-        'Hormonal Assay': 60000,
-        'HbA1c (Glycated Sugar)': 7000,
-        'Urine Analysis (UA)': 2500,
-        'Faecal Occult Blood Test (FOB)': 3000,
-        'Pregnancy Test – PT (HCG)': 2500,
-        'Widal Test': 7000,
-        'Hepatitis B (HBsAg)': 3500,
-        'Hepatitis C (HCV)': 3500,
-        'VDRL (Syphilis)': 3500,
-        'Retroviral Screening (RVS)': 5000,
-        'Blood Percentage (HB)': 1500,
-        'Blood Group (BG)': 4000,
-        'Genotype (GT)': 8000,
-        'EAR SWAB M/C/S': 7000,
-        'HVS M/C/S': 7000,
-        'Urine M/C/S': 7000,
-        'Pus Swab M/C/S': 10000,
-        'Semen Culture M/C/S': 15000,
-        'Urethral Swab M/C/S': 7000,
-        'Stool Culture M/C/S': 15000,
-        'Sputum M/C/S': 10000,
-        'H. pylori (HP)': 5000,
-        'Stool Analysis': 5000,
-        'Microfilaria (MF)': 5000,
-        'Malaria Parasite (MP)': 3000
-      };
 
+      const resolvedTests: { code: string; name: string; price: number; category: string | null }[] = [];
+      const unknownTests: string[] = [];
       for (const test of orderedTests) {
-        const testName = test.name || (typeof test === 'string' ? test : 'General Pathology Test');
-        let testPrice = Number(test.price);
-        if (isNaN(testPrice) || testPrice <= 0) {
-          testPrice = priceMap[testName] || 5000;
+        const rawName =
+          test.name || (typeof test === 'string' ? test : '') || 'Unnamed test';
+        const resolved = resolveLabTestPrice({ code: test.code, name: test.name ?? test });
+        if (!resolved) {
+          unknownTests.push(String(test.code || rawName));
+          continue;
         }
+        resolvedTests.push({
+          code: resolved.code,
+          name: resolved.name,
+          price: resolved.price,
+          category: test.category || resolved.category || null,
+        });
+      }
+
+      if (unknownTests.length > 0) {
+        for (const unknownName of unknownTests) {
+          try {
+            await queuePricingReview({
+              kind: 'lab',
+              code: null,
+              name: unknownName,
+              patientId,
+              encounterId,
+              requestedBy: completedBy,
+            });
+          } catch {
+            // Review queue write failure must not mask the pricing rejection.
+          }
+        }
+        throw new Error(
+          `PRICING_REVIEW_REQUIRED: ${unknownTests.join(', ')} has no catalogue price and was parked for pricing review. No order was created.`,
+        );
+      }
+
+      for (const ordered of resolvedTests) {
+        const testName = ordered.name;
+        const testPrice = ordered.price;
         totalLabAmount += testPrice;
         testNames.push(`${testName} (₦${testPrice.toLocaleString()})`);
 
         await query(`
-          INSERT INTO zmc_laboratory_orders (id, patient_id, encounter_id, doctor_id, test_name, status, date_ordered, price, category)
-          VALUES ($1, $2, $3, (SELECT id FROM zmc_users WHERE username = $4 LIMIT 1), $5, 'Pending', NOW(), $6, $7)
-        `, [generateUUID(), patientId, encounterId, completedBy, testName, testPrice, test.category || null]);
+          INSERT INTO zmc_laboratory_orders (id, patient_id, encounter_id, doctor_id, test_name, test_code, status, date_ordered, price, category)
+          VALUES ($1, $2, $3, (SELECT id FROM zmc_users WHERE username = $4 LIMIT 1), $5, $6, 'Pending', NOW(), $7, $8)
+        `, [generateUUID(), patientId, encounterId, completedBy, testName, ordered.code, testPrice, ordered.category]);
       }
 
       // Create unpaid system invoice with total laboratory amount

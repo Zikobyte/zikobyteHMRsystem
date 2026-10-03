@@ -901,18 +901,20 @@ export default function DashboardLayout({
                       );
                     }
 
-                    if (item.id === 'cashier' && !isCashierStaff) {
+                    if (item.id === 'cashier') {
                       const isCashierActive = activeTab === 'cashier' || activeTab.startsWith('cashier');
                       const isSubMenuVisible = isCashierHovered || cashierSubMenuOpen || isCashierActive;
 
                       const cashierSubItems = [
                         { id: 'cashier-billing', label: 'Billing Desk', icon: <Coins className="h-3.5 w-3.5" /> },
                         { id: 'cashier-lab-payments', label: 'Doctor Lab Request', icon: <FlaskConical className="h-3.5 w-3.5" /> },
+                        { id: 'cashier-iclinic-registrations', label: 'Eye Clinic Registrations', icon: <Eye className="h-3.5 w-3.5" /> },
                         { id: 'cashier-walkin-verify', label: 'Walk-in Lab Verification', icon: <CheckCircle2 className="h-3.5 w-3.5" /> },
                         { id: 'cashier-outstanding', label: 'Outstanding Balances', icon: <AlertTriangle className="h-3.5 w-3.5" /> },
                         { id: 'cashier-vitae', label: 'Payment Vitae', icon: <Receipt className="h-3.5 w-3.5" /> },
                         { id: 'cashier-no-charge', label: 'No Charge Patients', icon: <UserCheck className="h-3.5 w-3.5" /> },
-                        { id: 'cashier-maternity-supplies', label: 'Maternity Ward Supplies', icon: <Baby className="h-3.5 w-3.5 text-pink-600" /> }
+                        { id: 'cashier-maternity-supplies', label: 'Maternity Ward Supplies', icon: <Baby className="h-3.5 w-3.5 text-pink-600" /> },
+                        { id: 'cashier-discounts', label: 'Discount Requests', icon: <Percent className="h-3.5 w-3.5" /> }
                       ];
 
                       return (

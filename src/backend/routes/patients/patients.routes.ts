@@ -166,50 +166,55 @@ router.post('/opd/queue/order-labs', async (req: any, res: any) => {
 
     let totalLabAmount = 0;
     const testNames: string[] = [];
-    const priceMap: { [key: string]: number } = {
-      'Liver Function Test (LFT)': 15000,
-      'Electrolyte, Urea, Creatinine (E/U/C)': 15000,
-      'Lipid Profile': 15000,
-      'Prostate Specific Antigen (PSA)': 18000,
-      'Cholesterol': 7000,
-      'Random Blood Sugar (RBS)': 1500,
-      'Fasting Blood Sugar (FBS)': 1500,
-      'Full Blood Count (FBC)': 7000,
-      'Hormonal Assay': 60000,
-      'HbA1c (Glycated Sugar)': 7000,
-      'Urine Analysis (UA)': 2500,
-      'Faecal Occult Blood Test (FOB)': 3000,
-      'Pregnancy Test – PT (HCG)': 2500,
-      'Widal Test': 7000,
-      'Hepatitis B (HBsAg)': 3500,
-      'Hepatitis C (HCV)': 3500,
-      'VDRL (Syphilis)': 3500,
-      'Retroviral Screening (RVS)': 5000,
-      'Blood Percentage (HB)': 1500,
-      'Blood Group (BG)': 4000,
-      'Genotype (GT)': 8000,
-      'EAR SWAB M/C/S': 7000,
-      'HVS M/C/S': 7000,
-      'Urine M/C/S': 7000,
-      'Pus Swab M/C/S': 10000,
-      'Semen Culture M/C/S': 15000,
-      'Urethral Swab M/C/S': 7000,
-      'Stool Culture M/C/S': 15000,
-      'Sputum M/C/S': 10000,
-      'H. pylori (HP)': 5000,
-      'Stool Analysis': 5000,
-      'Microfilaria (MF)': 5000,
-      'Malaria Parasite (MP)': 3000
-    };
+    const { resolveLabTestPrice } = await import('../../catalogue/lab-catalogue');
+    const { queuePricingReview } = await import('../../catalogue/pricing-review');
 
     const { generateUUID } = await import('../../database/db.repo');
 
+    const resolvedTests: { code: string; name: string; price: number; category: string | null }[] = [];
+    const unknownTests: string[] = [];
     for (const test of orderedTests) {
-      const testName = test.name || (typeof test === 'string' ? test : 'General Pathology Test');
-      let testPrice = Number(test.price);
-      if (isNaN(testPrice) || testPrice <= 0) {
-        testPrice = priceMap[testName] || 5000;
+      const rawName =
+        test.name || (typeof test === 'string' ? test : '') || 'Unnamed test';
+      const resolved = resolveLabTestPrice({ code: test.code, name: test.name ?? test });
+      if (!resolved) {
+        unknownTests.push(String(test.code || rawName));
+        continue;
       }
+      resolvedTests.push({
+        code: resolved.code,
+        name: resolved.name,
+        price: resolved.price,
+        category: test.category || resolved.category || null,
+      });
+    }
+
+    if (unknownTests.length > 0) {
+      for (const unknownName of unknownTests) {
+        try {
+          await queuePricingReview({
+            kind: 'lab',
+            code: null,
+            name: unknownName,
+            patientId,
+            encounterId,
+            requestedBy: doctorName,
+          });
+        } catch {
+          // Review queue write failure must not mask the pricing rejection.
+        }
+      }
+      return res.status(422).json({
+        success: false,
+        code: 'PRICING_REVIEW_REQUIRED',
+        error: `Pricing stopped: ${unknownTests.join(', ')} has no catalogue price and was parked for pricing review. No order was created.`,
+        unknownTests,
+      });
+    }
+
+    for (const ordered of resolvedTests) {
+      const testName = ordered.name;
+      const testPrice = ordered.price;
       totalLabAmount += testPrice;
       testNames.push(`${testName} (₦${testPrice.toLocaleString()})`);
 
@@ -221,9 +226,9 @@ router.post('/opd/queue/order-labs', async (req: any, res: any) => {
 
       if (existingOrder.rows.length === 0) {
         await query(`
-          INSERT INTO zmc_laboratory_orders (id, patient_id, encounter_id, doctor_id, test_name, status, date_ordered, price, category)
-          VALUES ($1, $2, $3, (SELECT id FROM zmc_users WHERE username = $4 LIMIT 1), $5, 'Pending', NOW(), $6, $7)
-        `, [generateUUID(), patientId, encounterId, doctorName, testName, testPrice, test.category || null]);
+          INSERT INTO zmc_laboratory_orders (id, patient_id, encounter_id, doctor_id, test_name, test_code, status, date_ordered, price, category)
+          VALUES ($1, $2, $3, (SELECT id FROM zmc_users WHERE username = $4 LIMIT 1), $5, $6, 'Pending', NOW(), $7, $8)
+        `, [generateUUID(), patientId, encounterId, doctorName, testName, ordered.code, testPrice, ordered.category]);
       }
     }
 
@@ -281,72 +286,73 @@ router.post('/opd/queue/order-medications', async (req: any, res: any) => {
       return res.status(400).json({ success: false, error: 'No medications provided.' });
     }
 
-    const priceMap: { [key: string]: number } = {
-      'Paracetamol 500mg tab': 800,
-      'Ibuprofen 400mg tab': 1200,
-      'Diclofenac 50mg tab': 1500,
-      'Artemether/Lumefantrine (Coartem)': 2800,
-      'Dihydroartemisinin/Piperaquine': 3200,
-      'Amoxicillin 500mg cap': 2500,
-      'Amoxicillin/Clavulanate (Augmentin) 625mg': 4800,
-      'Ciprofloxacin 500mg tab': 2200,
-      'Azithromycin 500mg tab': 3500,
-      'Metronidazole 400mg tab': 1000,
-      'Cefuroxime 500mg tab': 4500,
-      'Erythromycin 500mg tab': 2500,
-      'Ampiclox cap': 2200,
-      'Omeprazole 20mg cap': 2000,
-      'Antacid Suspension (Mist Mag)': 1500,
-      'Hyoscine Butylbromide (Buscopan)': 1800,
-      'Metoclopramide 10mg tab': 800,
-      'Oral Rehydration Salts (ORS)': 600,
-      'Loperamide 2mg cap': 1000,
-      'Cetirizine 10mg tab': 1200,
-      'Loratadine 10mg tab': 1500,
-      'Chlorpheniramine 4mg tab': 500,
-      'Hydrocortisone 100mg inj': 2500,
-      'Dexamethasone 4mg inj': 1800,
-      'Vitamin C 100mg tab': 500,
-      'Vitamin B-Complex tab': 800,
-      'Folic Acid 5mg tab': 600,
-      'Ferrous Sulphate 200mg tab': 800,
-      'Multivitamin syrup': 2000,
-      'Zinc Sulfate 20mg tab': 1000,
-      'Amlodipine 5mg tab': 2000,
-      'Lisinopril 5mg tab': 2500,
-      'Lisinopril 10mg tab': 3000,
-      'Metformin 500mg tab': 1800,
-      'Glibenclamide 5mg tab': 1500,
-      'Labetalol 100mg': 3500,
-      'Methyldopa 250mg': 3000,
-      'Ceftriaxone IV 1g': 4500,
-      'Magnesium Sulphate 50% inj': 3500,
-      'Artesunate IV 60mg': 4000,
-      'Hydralazine IV 20mg': 3500,
-      'Oxytocin 10 IU': 2500,
-      'Diclofenac IM 75mg': 1500,
-      'Promethazine IM 50mg': 1200
-    };
-
     let totalMedAmount = 0;
     const medNames: string[] = [];
+    const { resolveMedPrice } = await import('../../catalogue/meds-catalogue');
+    const { queuePricingReview: queueMedPricingReview } = await import('../../catalogue/pricing-review');
     const { generateUUID } = await import('../../database/db.repo');
 
+    const resolvedMeds: {
+      code: string;
+      name: string;
+      price: number;
+      dose: string;
+      frequency: string;
+      duration: string;
+    }[] = [];
+    const unknownMeds: string[] = [];
     for (const med of prescribedMedications) {
-      const drugName = med.name || (typeof med === 'string' ? med : 'Prescribed Medicine');
-      let drugPrice = Number(med.price);
-      if (isNaN(drugPrice) || drugPrice <= 0) {
-        drugPrice = priceMap[drugName] || 1500;
+      const rawName = med.name || (typeof med === 'string' ? med : '') || 'Unnamed medication';
+      const resolved = resolveMedPrice({ code: med.code, name: med.name ?? med });
+      if (!resolved) {
+        unknownMeds.push(String(med.code || rawName));
+        continue;
       }
+      resolvedMeds.push({
+        code: resolved.code,
+        name: resolved.name,
+        price: resolved.price,
+        dose: typeof med.dose === 'string' ? med.dose : '',
+        frequency: typeof med.frequency === 'string' ? med.frequency : '',
+        duration: typeof med.duration === 'string' ? med.duration : '',
+      });
+    }
+
+    if (unknownMeds.length > 0) {
+      for (const unknownName of unknownMeds) {
+        try {
+          await queueMedPricingReview({
+            kind: 'medication',
+            code: null,
+            name: unknownName,
+            patientId,
+            encounterId,
+            requestedBy: doctorName,
+          });
+        } catch {
+          // Review queue write failure must not mask the pricing rejection.
+        }
+      }
+      return res.status(422).json({
+        success: false,
+        code: 'PRICING_REVIEW_REQUIRED',
+        error: `Pricing stopped: ${unknownMeds.join(', ')} has no catalogue price and was parked for pricing review. No order was created.`,
+        unknownMedications: unknownMeds,
+      });
+    }
+
+    for (const ordered of resolvedMeds) {
+      const drugName = ordered.name;
+      const drugPrice = ordered.price;
       totalMedAmount += drugPrice;
-      const details = `${drugName} (${med.dose || 'Standard Dose'}${med.frequency ? ` - ${med.frequency}` : ''}${med.duration ? ` for ${med.duration}` : ''})`;
+      const details = `${drugName} (${ordered.dose || 'Standard Dose'}${ordered.frequency ? ` - ${ordered.frequency}` : ''}${ordered.duration ? ` for ${ordered.duration}` : ''})`;
       medNames.push(`${details} - ₦${drugPrice.toLocaleString()}`);
 
       // Insert pharmacy order with status Pending Payment
       await query(`
-        INSERT INTO zmc_pharmacy_orders (id, patient_id, encounter_id, doctor_id, medication_name, dosage, frequency, duration, status, date_ordered)
-        VALUES ($1, $2, $3, (SELECT id FROM zmc_users WHERE username = $4 LIMIT 1), $5, $6, $7, $8, 'Pending Payment', NOW())
-      `, [generateUUID(), patientId, encounterId, doctorName, drugName, med.dose || '', med.frequency || '', med.duration || '']);
+        INSERT INTO zmc_pharmacy_orders (id, patient_id, encounter_id, doctor_id, medication_name, medication_code, dosage, frequency, duration, status, date_ordered)
+        VALUES ($1, $2, $3, (SELECT id FROM zmc_users WHERE username = $4 LIMIT 1), $5, $6, $7, $8, $9, 'Pending Payment', NOW())
+      `, [generateUUID(), patientId, encounterId, doctorName, drugName, ordered.code, ordered.dose, ordered.frequency, ordered.duration]);
     }
 
     // Create unpaid invoice for the Cashier
@@ -788,26 +794,30 @@ router.post('/eye-clinic/patients', async (req: any, res: any) => {
     const createdPatient = insertRes.rows[0];
 
     // Create billing invoice entry for Cashier queue
+    // Schema note (Phase 2 fix): zmc_invoices has NO items/total_amount/paid_amount/
+    // department/created_by columns (real DDL in db.repo.ts: id, invoice_number,
+    // patient_id, encounter_id, amount, status, date_issued, description + ALTER-added
+    // amount_paid, balance). Eye patients live in zmc_eye_patients (no zmc_patients /
+    // zmc_encounters row), so patient_id/encounter_id stay NULL (FK-safe) and the eye
+    // context (card id, items, department, recorded-by) is preserved in description.
     if (isNew) {
       try {
         const invId = `INV-EC-${Date.now().toString().slice(-6)}`;
+        const eyeCardItems = JSON.stringify([{ code: 'CLINICAL_CARD_EYE', description: 'Eye Clinic Patient Registration & Card Fee', quantity: 1, unitPrice: 3000, totalPrice: 3000, category: 'Clinical Card' }]);
         await query(`
           INSERT INTO zmc_invoices (
-            id, patient_id, encounter_id, items, total_amount, paid_amount, balance, status, department, created_by
+            id, invoice_number, patient_id, encounter_id, amount, amount_paid, balance, status, description, date_issued
           )
-          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+          VALUES ($1, $2, NULL, NULL, $3, $4, $5, $6, $7, NOW())
           ON CONFLICT (id) DO NOTHING
         `, [
           invId,
-          newId,
-          newId,
-          JSON.stringify([{ code: 'CLINICAL_CARD_EYE', description: 'Eye Clinic Patient Registration & Card Fee', quantity: 1, unitPrice: 3000, totalPrice: 3000, category: 'Clinical Card' }]),
+          invId,
           3000.00,
           0.00,
           3000.00,
           'Pending',
-          'Eye Clinic',
-          req.user?.name || req.user?.username || 'Eye Clinic Front Desk'
+          `[Eye Clinic] Eye Clinic Patient Registration & Card Fee for card ${newId} (${name.trim()}). Items: ${eyeCardItems}. Recorded by ${req.user?.name || req.user?.username || 'Eye Clinic Front Desk'}.`
         ]);
       } catch (invErr) {
         console.warn('Could not record invoice in zmc_invoices:', invErr);
@@ -956,6 +966,11 @@ router.post('/eye-clinic/consultations', async (req: any, res: any) => {
     ]);
 
     // 3. Create / Update Cashier Invoice for Optical Store & Clinical Services
+    // Schema note (Phase 2 fix): same real-schema mapping as the eye registration
+    // invoice above — items/total_amount/paid_amount/department/created_by do not
+    // exist on zmc_invoices, and consultId is a zmc_eye_consultations id (no
+    // zmc_encounters row), so encounter_id stays NULL (FK-safe) with eye context
+    // (services, department, recorded-by) preserved in description.
     if (Array.isArray(services) && services.length > 0) {
       const invId = `INV-EC-${Date.now().toString().slice(-6)}`;
       const invoiceItems = services.map((s: any) => ({
@@ -966,23 +981,21 @@ router.post('/eye-clinic/consultations', async (req: any, res: any) => {
         totalPrice: s.price,
         category: s.category || 'Eye Clinic'
       }));
+      const invoiceStatus = paymentStatus === 'Paid' ? 'Paid' : (totalPaid > 0 ? 'Partially Paid' : 'Pending');
 
       await query(`
         INSERT INTO zmc_invoices (
-          id, patient_id, encounter_id, items, total_amount, paid_amount, balance, status, department, created_by
+          id, invoice_number, patient_id, encounter_id, amount, amount_paid, balance, status, description, date_issued
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+        VALUES ($1, $2, NULL, NULL, $3, $4, $5, $6, $7, NOW())
       `, [
         invId,
-        patientId,
-        consultId,
-        JSON.stringify(invoiceItems),
+        invId,
         totalBill,
         totalPaid,
         balance,
-        paymentStatus === 'Paid' ? 'Paid' : (totalPaid > 0 ? 'Partially Paid' : 'Pending'),
-        'Eye Clinic',
-        doc
+        invoiceStatus,
+        `[Eye Clinic] Optical & clinical services for ${patientName || 'Eye Patient'} (${hospitalNumber || patientId}), consultation ${consultId}. Items: ${JSON.stringify(invoiceItems)}. Recorded by ${doc}.`
       ]);
     }
 

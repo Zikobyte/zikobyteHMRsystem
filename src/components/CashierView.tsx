@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { apiFetch, socketManager } from '../utils/api';
-import { Patient, User } from '../types';
+import { Patient, User, Payment, Invoice, OutstandingBalance, DiscountRequest, LabPayment } from '../types';
 import ExportButton from './ExportButton';
 import { 
   Search, 
@@ -40,24 +40,12 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import MaternitySuppliesCashierView from './cashier/MaternitySuppliesCashierView';
 
-interface Payment {
-  id: string;
-  patientId: string;
-  invoiceId?: string;
-  amount: number;
-  status: string;
-  datePaid: string;
-  paymentMethod: string;
-  collectedBy?: string;
-  purpose?: string;
-}
-
 export default function CashierView({ activeTab: propActiveTab }: { activeTab?: string } = {}) {
   const [patients, setPatients] = useState<Patient[]>([]);
   const [payments, setPayments] = useState<Payment[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [queueItems, setQueueItems] = useState<any[]>([]);
-  const [invoices, setInvoices] = useState<any[]>([]);
+  const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [isLoadingQueue, setIsLoadingQueue] = useState(false);
   
   // Tab states
@@ -65,8 +53,9 @@ export default function CashierView({ activeTab: propActiveTab }: { activeTab?: 
     if (propActiveTab === 'cashier-outstanding' || propActiveTab === 'outstanding') return 'outstanding';
     if (propActiveTab === 'cashier-discounts' || propActiveTab === 'discounts') return 'discounts';
     if (propActiveTab === 'cashier-lab-payments') return 'lab-payments';
+    if (propActiveTab === 'cashier-iclinic-registrations' || propActiveTab === 'iclinic-registrations') return 'iclinic-registrations';
     if (propActiveTab === 'cashier-walkin-verify') return 'walkin-verify';
-    if (propActiveTab === 'cashier-vitae') return 'vitae';
+    if (propActiveTab === 'cashier-vitae' || propActiveTab === 'cashier-pv') return 'vitae';
     if (propActiveTab === 'cashier-no-charge') return 'no-charge';
     if (propActiveTab === 'cashier-maternity-supplies' || propActiveTab === 'maternity-supplies') return 'maternity-supplies';
     return 'billing';
@@ -77,7 +66,7 @@ export default function CashierView({ activeTab: propActiveTab }: { activeTab?: 
   const [eyePayMethods, setEyePayMethods] = useState<Record<string, string>>({});
   const [eyePayAmounts, setEyePayAmounts] = useState<Record<string, string>>({});
   const [pendingQueueTab, setPendingQueueTab] = useState<'emergency' | 'walkin' | 'regular'>('emergency');
-  const [outstandingList, setOutstandingList] = useState<any[]>([]);
+  const [outstandingList, setOutstandingList] = useState<OutstandingBalance[]>([]);
   const [settleItemId, setSettleItemId] = useState<string | null>(null);
   const [settlePayAmount, setSettlePayAmount] = useState<string>('');
   const [settlePayMethod, setSettlePayMethod] = useState<string>('Cash');
@@ -88,7 +77,7 @@ export default function CashierView({ activeTab: propActiveTab }: { activeTab?: 
   const [labSubTab, setLabSubTab] = useState<'pending' | 'history'>('pending');
   const [labPayMethods, setLabPayMethods] = useState<Record<string, string>>({});
   const [labCategoryFilter, setLabCategoryFilter] = useState<'ALL' | 'Standard' | 'Maternity' | 'Emergency'>('ALL');
-  const [labHistoryRecords, setLabHistoryRecords] = useState<any[]>([]);
+  const [labHistoryRecords, setLabHistoryRecords] = useState<LabPayment[]>([]);
   
   // Custom payment amounts state for partial payments
   const [selectedTotalBill, setSelectedTotalBill] = useState<number>(0);
@@ -109,15 +98,16 @@ export default function CashierView({ activeTab: propActiveTab }: { activeTab?: 
     originalAmount: number;
   } | null>(null);
   const [isSubmittingDiscount, setIsSubmittingDiscount] = useState(false);
-  const [discountRequestsList, setDiscountRequestsList] = useState<any[]>([]);
+  const [discountRequestsList, setDiscountRequestsList] = useState<DiscountRequest[]>([]);
 
   useEffect(() => {
     if (propActiveTab) {
       if (propActiveTab === 'cashier-lab-payments') setActiveTab('lab-payments');
+      else if (propActiveTab === 'cashier-iclinic-registrations' || propActiveTab === 'iclinic-registrations') setActiveTab('iclinic-registrations');
       else if (propActiveTab === 'cashier-walkin-verify') setActiveTab('walkin-verify');
       else if (propActiveTab === 'cashier-outstanding' || propActiveTab === 'outstanding') setActiveTab('outstanding');
       else if (propActiveTab === 'cashier-discounts' || propActiveTab === 'discounts') setActiveTab('discounts');
-      else if (propActiveTab === 'cashier-vitae') setActiveTab('vitae');
+      else if (propActiveTab === 'cashier-vitae' || propActiveTab === 'cashier-pv') setActiveTab('vitae');
       else if (propActiveTab === 'cashier-no-charge') setActiveTab('no-charge');
       else if (propActiveTab === 'cashier-maternity-supplies' || propActiveTab === 'maternity-supplies') setActiveTab('maternity-supplies');
       else if (propActiveTab === 'cashier-billing' || propActiveTab === 'cashier') setActiveTab('billing');
@@ -211,7 +201,7 @@ export default function CashierView({ activeTab: propActiveTab }: { activeTab?: 
           isOpen: true,
           title: 'Departmental Handover Confirmed',
           message: 'Departmental cash collection has been successfully verified and balanced into the Cashier ledger.',
-          amount: targetPayment?.amount || 0,
+          amount: Number(targetPayment?.amount) || 0,
           badgeText: 'Handover Completed',
           details: [
             { label: 'Payment Method', value: targetPayment?.paymentMethod || 'Cash' },
@@ -234,6 +224,11 @@ export default function CashierView({ activeTab: propActiveTab }: { activeTab?: 
       const enteredStr = labCustomAmounts[qItem.id];
       const collectedAmount = enteredStr !== undefined && enteredStr !== '' ? parseFloat(enteredStr) : totalAmount;
       const totalB = totalAmount > 0 ? totalAmount : collectedAmount;
+      if (isNaN(collectedAmount) || collectedAmount <= 0) {
+        setError('Please enter a valid lab payment amount greater than zero.');
+        setIsLoading(false);
+        return;
+      }
 
       let response;
       if (collectedAmount < totalB) {
@@ -242,7 +237,7 @@ export default function CashierView({ activeTab: propActiveTab }: { activeTab?: 
           body: JSON.stringify({
             patientId: qItem.patient_id,
             encounterId: qItem.encounter_id,
-            invoiceId: invoiceId || `INV-LAB-${Date.now()}`,
+            invoiceId: invoiceId || undefined, // leave null-id to backend sanitizer; never fabricate INV- ids client-side
             totalBill: totalB,
             amountPaid: collectedAmount,
             paymentMethod: labPayMethods[qItem.id] || 'Cash',
@@ -263,7 +258,7 @@ export default function CashierView({ activeTab: propActiveTab }: { activeTab?: 
             amount: collectedAmount,
             paymentMethod: labPayMethods[qItem.id] || 'Cash',
             status: 'Completed',
-            invoiceId: invoiceId || `INV-LAB-${Date.now()}`
+            invoiceId: invoiceId || undefined // leave null-id to backend sanitizer; never fabricate INV- ids client-side
           })
         });
       }
@@ -324,6 +319,19 @@ export default function CashierView({ activeTab: propActiveTab }: { activeTab?: 
   const handleDiscountSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!discountTarget || !discountValue || !discountReason) return;
+    const discountNumeric = parseFloat(discountValue);
+    if (isNaN(discountNumeric) || discountNumeric <= 0) {
+      setError('Please enter a valid discount value greater than zero.');
+      return;
+    }
+    if (discountType === 'Percentage' && discountNumeric > 100) {
+      setError('Discount percentage cannot exceed 100%.');
+      return;
+    }
+    if (discountType === 'Fixed' && discountNumeric > discountTarget.originalAmount) {
+      setError(`Fixed discount (₦${discountNumeric.toLocaleString()}) cannot exceed the original bill (₦${discountTarget.originalAmount.toLocaleString()}).`);
+      return;
+    }
 
     setIsSubmittingDiscount(true);
     setError('');
@@ -493,6 +501,35 @@ export default function CashierView({ activeTab: propActiveTab }: { activeTab?: 
     }
   };
 
+  // Realtime: refresh the cashier ledger when the backend broadcasts
+  // payment/billing events. Single shared socketManager subscription
+  // (never a second WebSocket); a ref keeps the fetch callback fresh.
+  const fetchInitialDataRef = useRef(fetchInitialData);
+  fetchInitialDataRef.current = fetchInitialData;
+
+  useEffect(() => {
+    const cashierEventTypes = new Set([
+      'DEPARTMENTAL_CASH_COLLECTED',
+      'PAYMENT_HANDOVER_CONFIRMED',
+      'DISCOUNT_REQUEST_SUBMITTED',
+      'DISCOUNT_APPROVED',
+      'DISCOUNT_REJECTED',
+      'OUTSTANDING_BALANCE_SETTLED',
+      'BILLING_QUEUE_UPDATED',
+      'PATIENT_PAYMENT_COMPLETED',
+      'PATIENT_ROUTED_TO_LAB',
+      'LAB_ORDER_CREATED',
+      'LAB_WALK_IN_REGISTERED',
+      'LAB_WALK_IN_PAID',
+    ]);
+    const unsubscribe = socketManager.subscribe((msg: any) => {
+      if (msg && cashierEventTypes.has(msg.type)) {
+        fetchInitialDataRef.current();
+      }
+    });
+    return () => unsubscribe();
+  }, []);
+
   const handleVerifyEyeRegistration = async (patient: any) => {
     try {
       const payMethodStr = eyePayMethods[patient.id] || 'Cash';
@@ -557,6 +594,11 @@ export default function CashierView({ activeTab: propActiveTab }: { activeTab?: 
     const pAmt = parseFloat(settlePayAmount);
     if (isNaN(pAmt) || pAmt <= 0) {
       setError('Please specify a valid payment amount.');
+      return;
+    }
+    const balanceOwed = parseFloat(item.balance);
+    if (!isNaN(balanceOwed) && pAmt > balanceOwed) {
+      setError(`Amount typed (₦${pAmt.toLocaleString()}) exceeds remaining balance owed (₦${balanceOwed.toLocaleString()}).`);
       return;
     }
     setIsSettling(true);
@@ -672,6 +714,11 @@ export default function CashierView({ activeTab: propActiveTab }: { activeTab?: 
       const totalAmount = Number(patient.totalAmount) || 0;
       const enteredStr = walkInCustomAmounts[patient.encounterId];
       const collectedAmount = enteredStr !== undefined && enteredStr !== '' ? parseFloat(enteredStr) : totalAmount;
+      if (isNaN(collectedAmount) || collectedAmount <= 0) {
+        setError('Please enter a valid walk-in payment amount greater than zero.');
+        setIsVerifyingWalkIn(false);
+        return;
+      }
 
       const response = await apiFetch('/payments/lab/confirm-walk-in', {
         method: 'POST',
@@ -830,7 +877,7 @@ export default function CashierView({ activeTab: propActiveTab }: { activeTab?: 
             amount: amt,
             paymentMethod: payMethod,
             status: 'Completed',
-            invoiceId: payRef || `PAY-${Math.floor(100000 + Math.random() * 900000)}`
+            invoiceId: payRef || undefined // pass the real invoice id only; backend sanitizer handles the rest
           })
         });
       }
@@ -1631,7 +1678,7 @@ export default function CashierView({ activeTab: propActiveTab }: { activeTab?: 
                                         <p className="text-[10px] text-rose-700 font-mono mt-0.5 truncate">{inv.description}</p>
                                       </div>
                                       <span className="text-[10px] bg-rose-600 text-white font-bold px-2.5 py-1 rounded-lg shrink-0 font-mono">
-                                        ₦{parseFloat(inv.amount).toLocaleString()}
+                                        ₦{Number(inv.amount).toLocaleString()}
                                       </span>
                                     </button>
                                   ))}
@@ -1794,7 +1841,7 @@ export default function CashierView({ activeTab: propActiveTab }: { activeTab?: 
                                               <p className="text-[10px] text-slate-500 font-mono mt-0.5 truncate">{inv.description}</p>
                                             </div>
                                             <span className="text-[10px] bg-slate-800 text-white font-bold px-2.5 py-1 rounded-lg shrink-0 font-mono">
-                                              ₦{parseFloat(inv.amount).toLocaleString()}
+                                              ₦{Number(inv.amount).toLocaleString()}
                                             </span>
                                           </button>
                                         ))}
@@ -1877,11 +1924,11 @@ export default function CashierView({ activeTab: propActiveTab }: { activeTab?: 
                             </span>
                           </div>
                           <p className="text-[11px] text-emerald-800">
-                            Original: <strong className="line-through">₦{parseFloat(approvedDisc.original_amount).toLocaleString()}</strong> → Discount: <strong>-₦{parseFloat(approvedDisc.calculated_discount).toLocaleString()} ({approvedDisc.discount_type === 'Percentage' ? `${approvedDisc.discount_value}%` : `₦${parseFloat(approvedDisc.discount_value).toLocaleString()}`})</strong>
+                            Original: <strong className="line-through">₦{Number(approvedDisc.original_amount).toLocaleString()}</strong> → Discount: <strong>-₦{Number(approvedDisc.calculated_discount).toLocaleString()} ({approvedDisc.discount_type === 'Percentage' ? `${approvedDisc.discount_value}%` : `₦${Number(approvedDisc.discount_value).toLocaleString()}`})</strong>
                           </p>
                           <div className="font-mono font-black text-xs text-emerald-900 flex justify-between pt-1 border-t border-emerald-200/80">
                             <span>Discounted Payable:</span>
-                            <span>₦{parseFloat(approvedDisc.final_amount).toLocaleString()}</span>
+                            <span>₦{Number(approvedDisc.final_amount).toLocaleString()}</span>
                           </div>
                         </div>
                       );
@@ -1894,7 +1941,7 @@ export default function CashierView({ activeTab: propActiveTab }: { activeTab?: 
                             <Clock className="h-4 w-4 text-amber-600 animate-spin" /> Discount Request Pending HR Approval
                           </span>
                           <span className="font-mono text-[11px] font-bold text-amber-950 bg-amber-200/80 px-2 py-0.5 rounded-md">
-                            {pendingDisc.discount_type === 'Percentage' ? `${pendingDisc.discount_value}%` : `₦${parseFloat(pendingDisc.discount_value).toLocaleString()}`} Requested
+                            {pendingDisc.discount_type === 'Percentage' ? `${pendingDisc.discount_value}%` : `₦${Number(pendingDisc.discount_value).toLocaleString()}`} Requested
                           </span>
                         </div>
                       );
@@ -2409,6 +2456,7 @@ export default function CashierView({ activeTab: propActiveTab }: { activeTab?: 
                               </td>
                               <td className="p-4 text-slate-500 font-bold text-[11px]">{rec.collected_by || 'Cashier'}</td>
                               <td className="p-4 text-center">
+                                {/* NOTE: window.print() prints the full page; scope to this receipt row/area with print-only CSS when the print-styling pass lands. */}
                                 <button
                                   type="button"
                                   onClick={() => window.print()}
@@ -3272,7 +3320,7 @@ export default function CashierView({ activeTab: propActiveTab }: { activeTab?: 
             </div>
             <div className="flex items-center gap-2">
               <span className="px-3.5 py-1.5 bg-rose-50 text-rose-700 font-mono font-bold text-xs rounded-xl border border-rose-200 shadow-2xs">
-                Total Hospital Outstanding Debt: ₦{outstandingList.reduce((acc, curr) => acc + (parseFloat(curr.balance) || 0), 0).toLocaleString()}
+                Total Hospital Outstanding Debt: ₦{outstandingList.reduce((acc, curr) => acc + (Number(curr.balance) || 0), 0).toLocaleString()}
               </span>
             </div>
           </div>
@@ -3329,7 +3377,7 @@ export default function CashierView({ activeTab: propActiveTab }: { activeTab?: 
                             <div className="flex items-center justify-between text-[11px]">
                               <span className="text-slate-500 font-medium">Total Amount Owed:</span>
                               <span className="font-mono font-extrabold text-slate-800">
-                                ₦{parseFloat(item.total_bill || 0).toLocaleString()}
+                                ₦{Number(item.total_bill || 0).toLocaleString()}
                               </span>
                             </div>
 
@@ -3337,7 +3385,7 @@ export default function CashierView({ activeTab: propActiveTab }: { activeTab?: 
                             <div className="flex items-center justify-between text-[11px] pt-1 border-t border-slate-200/60">
                               <span className="text-rose-600 font-bold">Total Remaining Owed:</span>
                               <span className="font-mono font-black text-rose-600 bg-rose-50 px-2 py-0.5 rounded-md border border-rose-200">
-                                ₦{parseFloat(item.balance || 0).toLocaleString()}
+                                ₦{Number(item.balance || 0).toLocaleString()}
                               </span>
                             </div>
 
@@ -3403,7 +3451,7 @@ export default function CashierView({ activeTab: propActiveTab }: { activeTab?: 
                               onClick={() => setRowPaymentAmounts(prev => ({ ...prev, [item.id]: item.balance.toString() }))}
                               className="text-[#2A758C] hover:underline font-bold font-mono bg-[#2A758C]/5 px-1.5 py-0.5 rounded border border-[#2A758C]/20"
                             >
-                              Full Balance (₦{parseFloat(item.balance || 0).toLocaleString()})
+                              Full Balance (₦{Number(item.balance || 0).toLocaleString()})
                             </button>
                           </div>
                         </td>
@@ -3474,18 +3522,18 @@ export default function CashierView({ activeTab: propActiveTab }: { activeTab?: 
                           </div>
                         </td>
                         <td className="p-3 font-mono font-bold text-slate-700 align-top">
-                          ₦{parseFloat(d.original_amount).toLocaleString()}
+                          ₦{Number(d.original_amount).toLocaleString()}
                         </td>
                         <td className="p-3 align-top">
                           <span className="px-2 py-0.5 rounded-md bg-amber-50 text-amber-900 border border-amber-200 font-mono font-bold text-xs">
-                            {d.discount_type === 'Percentage' ? `${d.discount_value}%` : `₦${parseFloat(d.discount_value).toLocaleString()}`}
+                            {d.discount_type === 'Percentage' ? `${d.discount_value}%` : `₦${Number(d.discount_value).toLocaleString()}`}
                           </span>
                         </td>
                         <td className="p-3 font-mono font-bold text-amber-700 align-top">
-                          -₦{parseFloat(d.calculated_discount).toLocaleString()}
+                          -₦{Number(d.calculated_discount).toLocaleString()}
                         </td>
                         <td className="p-3 font-mono font-black text-emerald-700 text-sm align-top">
-                          ₦{parseFloat(d.final_amount).toLocaleString()}
+                          ₦{Number(d.final_amount).toLocaleString()}
                         </td>
                         <td className="p-3 text-slate-700 max-w-xs align-top font-medium">
                           <p className="line-clamp-2 bg-slate-50 p-2 rounded-lg border border-slate-100 text-[11px] text-slate-800">
@@ -3755,7 +3803,7 @@ export default function CashierView({ activeTab: propActiveTab }: { activeTab?: 
                   <div className="text-xs text-amber-900 space-y-1">
                     <p className="font-bold">Unconfirmed Handovers Pending ({payments.filter(p => p.status === 'Unconfirmed').length})</p>
                     <p className="text-[11px] text-amber-800">
-                      There is <strong>₦{payments.filter(p => p.status === 'Unconfirmed').reduce((acc, p) => acc + p.amount, 0).toLocaleString()}</strong> in unconfirmed cash collected by OPD/Lab. Please confirm receipt on the Billing Desk before closing shift.
+                      There is <strong>₦{payments.filter(p => p.status === 'Unconfirmed').reduce((acc, p) => acc + Number(p.amount), 0).toLocaleString()}</strong> in unconfirmed cash collected by OPD/Lab. Please confirm receipt on the Billing Desk before closing shift.
                     </p>
                   </div>
                 </div>

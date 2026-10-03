@@ -28,7 +28,7 @@ import {
 } from 'lucide-react';
 
 // Categorized test catalog with exact names and prices from specifications
-const WALK_IN_LAB_CATALOG = [
+export const WALK_IN_LAB_CATALOG = [
   {
     category: 'Parasitology',
     tests: [
@@ -43,7 +43,7 @@ const WALK_IN_LAB_CATALOG = [
       { id: 'rvs', name: 'RVS – Retroviral Screening (HIV)', price: 5000 },
       { id: 'hbsag', name: 'HbsAg – Hepatitis B Surface Antigen', price: 3500 },
       { id: 'vdrl', name: 'VDRL – Syphilis Test', price: 3500 },
-      { id: 'blood_grp_gen', name: 'Blood Group & Genotype', price: 3000 },
+      { id: 'blood_group_genotype', name: 'Blood Group & Genotype', price: 3000 },
       { id: 'genotype', name: 'Genotype', price: 10000 },
       { id: 'cross_match', name: 'Cross Matching', price: 10000 },
       { id: 'hp_pylori', name: 'HP – Helicobacter Pylori', price: 5000 },
@@ -69,7 +69,7 @@ const WALK_IN_LAB_CATALOG = [
       { id: 'hormonal', name: 'Hormonal Profile', price: 90000 },
       { id: 'fbs_rbs', name: 'FBS/RBS – Fasting/Random Blood Sugar', price: 2000 },
       { id: 'cholesterol', name: 'Cholesterol', price: 10000 },
-      { id: 'bilirubin', name: 'Total Bilirubin', price: 7000 },
+      { id: 'bilirubin_total', name: 'Total Bilirubin', price: 7000 },
     ]
   },
   {
@@ -239,11 +239,16 @@ export default function LaboratoryView({ activeTab: propActiveTab }: { activeTab
       try {
         const res = await apiFetch(`/patients/opd/queue/lab-orders?encounterId=${patient.encounter_id}`);
         if (res.success && res.data && res.data.length > 0) {
-          const mapped = res.data.map((t: any) => ({
-            category: t.category || (t.test_name.includes('HP') || t.test_name.includes('Widal') ? 'Serology' : 'Hematology'),
-            name: t.test_name,
-            price: Number(t.price) || (t.test_name.includes('HP') ? 5000 : 3000)
-          }));
+          const mapped = res.data.map((t: any) => {
+            const storedPrice = Number(t.price);
+            return {
+              category: t.category || null,
+              code: t.test_code || null,
+              name: t.test_name,
+              price: Number.isFinite(storedPrice) && storedPrice > 0 ? storedPrice : 0,
+              needsPricing: !(Number.isFinite(storedPrice) && storedPrice > 0),
+            };
+          });
           setOrderedLabTests(mapped);
         } else {
           setOrderedLabTests([]);

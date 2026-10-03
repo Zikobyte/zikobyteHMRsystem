@@ -208,3 +208,167 @@ export interface HRDashboardStats {
   };
   recentProcurements: Procurement[];
 }
+
+/**
+ * Cashier / billing domain types.
+ * Backend returns camelCase-mapped rows on most endpoints but raw
+ * snake_case rows on others (e.g. SELECT * discount/outstanding lists),
+ * so both spellings are accepted; writers should prefer camelCase.
+ */
+
+export interface Invoice {
+  id: string;
+  invoiceNumber?: string;
+  patientId?: string;
+  patientName?: string;
+  encounterId?: string;
+  amount: number | string;
+  total?: number | string;
+  amountPaid?: number | string;
+  balance?: number | string;
+  description?: string;
+  serviceType?: string;
+  purpose?: string;
+  cardType?: string;
+  status: string;
+  dateIssued?: string;
+  // Raw snake_case fallbacks (joined queue/invoice rows)
+  invoice_number?: string;
+  patient_id?: string;
+  patient_name?: string;
+  encounter_id?: string;
+  amount_paid?: number | string;
+  service_type?: string;
+  card_type?: string;
+  date_issued?: string;
+}
+
+export interface Payment {
+  id: string;
+  patientId?: string;
+  encounterId?: string;
+  invoiceId?: string;
+  amount: number | string;
+  amountPaid?: number | string;
+  totalBill?: number | string;
+  balance?: number | string;
+  status: string;
+  datePaid?: string;
+  paymentMethod?: string;
+  collectedBy?: string;
+  purpose?: string;
+  department?: string;
+  // Raw snake_case fallbacks (joined ledger rows)
+  patient_id?: string;
+  patient_name?: string;
+  hospital_number?: string;
+  encounter_id?: string;
+  invoice_id?: string;
+  invoice_desc?: string;
+  amount_paid?: number | string;
+  total_bill?: number | string;
+  date_paid?: string;
+  payment_method?: string;
+  collected_by?: string;
+  card_type?: string;
+}
+
+export interface OutstandingBalance {
+  id: string;
+  patientId?: string;
+  patientName?: string;
+  hospitalNumber?: string;
+  encounterId?: string;
+  invoiceId?: string;
+  purpose?: string;
+  department?: string;
+  departmentOwed?: string;
+  totalBill?: number | string;
+  amountPaid?: number | string;
+  balance?: number | string;
+  status: string;
+  paymentMethod?: string;
+  clearedBy?: string;
+  clearedAt?: string;
+  lastPaymentDate?: string;
+  phoneNumber?: string;
+  // Raw snake_case fallbacks (SELECT * rows)
+  patient_id?: string;
+  patient_name?: string;
+  hospital_number?: string;
+  encounter_id?: string;
+  invoice_id?: string;
+  department_owed?: string;
+  total_bill?: number | string;
+  amount_paid?: number | string;
+  payment_method?: string;
+  cleared_by?: string;
+  cleared_at?: string;
+  last_payment_date?: string;
+  phone_number?: string;
+}
+
+export interface DiscountRequest {
+  id: string;
+  patientId?: string;
+  patientName?: string;
+  hospitalNumber?: string;
+  encounterId?: string;
+  invoiceId?: string;
+  originalAmount?: number | string;
+  discountType?: 'Percentage' | 'Fixed' | string;
+  discountValue?: number | string;
+  calculatedDiscount?: number | string;
+  finalAmount?: number | string;
+  reason?: string;
+  status?: string;
+  requestedBy?: string;
+  requestedAt?: string;
+  approvedBy?: string;
+  // Raw snake_case fallbacks (SELECT * rows)
+  patient_id?: string;
+  patient_name?: string;
+  hospital_number?: string;
+  encounter_id?: string;
+  invoice_id?: string;
+  original_amount?: number | string;
+  discount_type?: string;
+  discount_value?: number | string;
+  calculated_discount?: number | string;
+  final_amount?: number | string;
+  requested_by?: string;
+  requested_at?: string;
+  approved_by?: string;
+}
+
+export interface LabPayment {
+  id: string;
+  patientId?: string;
+  patientName?: string;
+  hospitalNumber?: string;
+  cardType?: string;
+  encounterId?: string;
+  invoiceId?: string;
+  testsSummary?: string;
+  amount?: number | string;
+  totalBill?: number | string;
+  amountPaid?: number | string;
+  balance?: number | string;
+  paymentMethod?: string;
+  collectedBy?: string;
+  datePaid?: string;
+  status?: string;
+  // Raw snake_case fallbacks (SELECT * rows)
+  patient_id?: string;
+  patient_name?: string;
+  hospital_number?: string;
+  card_type?: string;
+  encounter_id?: string;
+  invoice_id?: string;
+  tests_summary?: string;
+  total_bill?: number | string;
+  amount_paid?: number | string;
+  payment_method?: string;
+  collected_by?: string;
+  date_paid?: string;
+}

@@ -49,7 +49,14 @@ const PatientDirectoryImportView = lazyView(
 );
 
 export const ROUTE_ENTRIES: RouteEntry[] = [
-  { tab: 'dashboard', path: '/dashboard', aliases: ['/', '/overview'], departments: ['opd', 'nurse', 'eye', 'hr', 'it', 'all'], component: DashboardView, fallbackTab: 'dashboard' },
+	{
+		tab: 'dashboard',
+		path: '/dashboard',
+		aliases: ['/', '/overview'],
+		departments: ['opd', 'nurse', 'eye', 'hr', 'it', 'all'],
+		component: DashboardView,
+		fallbackTab: 'dashboard'
+	},
   { tab: 'overview', path: '/overview', departments: ['finance', 'all'], component: DashboardView, fallbackTab: 'dashboard' },
   { tab: 'hr-dashboard', path: '/hr/dashboard', aliases: ['/hr'], departments: ['hr', 'all'], component: HRDashboardView, fallbackTab: 'dashboard' },
   { tab: 'hr-employees', path: '/hr/employees', aliases: ['/employees'], departments: ['hr', 'all'], component: HRDashboardView, fallbackTab: 'hr-dashboard' },
@@ -71,6 +78,16 @@ export const ROUTE_ENTRIES: RouteEntry[] = [
   { tab: 'injection-records', path: '/nursing/injections', aliases: ['/injection-records'], departments: ['nurse', 'all'], component: NursingView, fallbackTab: 'admitted-patients' },
   { tab: 'triage', path: '/nursing/triage', aliases: ['/triage'], departments: ['nurse', 'all'], component: OPDRegistrationView, fallbackTab: 'admitted-patients' },
   { tab: 'cashier', path: '/cashier', aliases: ['/cashier/billing'], departments: ['cashier', 'finance', 'all'], component: CashierView, fallbackTab: 'dashboard' },
+  { tab: 'cashier-billing', path: '/cashier/billing', departments: ['cashier', 'finance', 'all'], component: CashierView, fallbackTab: 'cashier' },
+  { tab: 'cashier-lab-payments', path: '/cashier/lab-payments', departments: ['cashier', 'finance', 'all'], component: CashierView, fallbackTab: 'cashier' },
+  { tab: 'cashier-iclinic-registrations', path: '/cashier/iclinic-registrations', departments: ['cashier', 'finance', 'all'], component: CashierView, fallbackTab: 'cashier' },
+  { tab: 'cashier-walkin-verify', path: '/cashier/walkin-verify', departments: ['cashier', 'finance', 'all'], component: CashierView, fallbackTab: 'cashier' },
+  { tab: 'cashier-vitae', path: '/cashier/vitae', aliases: ['/cashier/pv', '/cashier/payment-vitae'], departments: ['cashier', 'finance', 'all'], component: CashierView, fallbackTab: 'cashier' },
+  { tab: 'cashier-pv', path: '/cashier/pv', departments: ['cashier', 'finance', 'all'], component: CashierView, fallbackTab: 'cashier' },
+  { tab: 'cashier-no-charge', path: '/cashier/no-charge', departments: ['cashier', 'finance', 'all'], component: CashierView, fallbackTab: 'cashier' },
+  { tab: 'cashier-maternity-supplies', path: '/cashier/maternity-supplies', departments: ['cashier', 'finance', 'all'], component: CashierView, fallbackTab: 'cashier' },
+  { tab: 'cashier-discounts', path: '/cashier/discounts', departments: ['cashier', 'finance', 'all'], component: CashierView, fallbackTab: 'cashier' },
+  { tab: 'cashier-outstanding', path: '/cashier/outstanding', departments: ['cashier', 'finance', 'all'], component: CashierView, fallbackTab: 'cashier' },
   { tab: 'consult', path: '/doctors', aliases: ['/consult'], departments: ['doctor', 'all'], component: DoctorView, fallbackTab: 'dashboard' },
   { tab: 'doctors', path: '/doctors', departments: ['doctor', 'finance', 'all'], component: DoctorView, fallbackTab: 'dashboard' },
   { tab: 'standard-cards', path: '/doctors/standard-cards', aliases: ['/standard-cards'], departments: ['opd', 'doctor', 'all'], component: DoctorView, fallbackTab: 'dashboard' },

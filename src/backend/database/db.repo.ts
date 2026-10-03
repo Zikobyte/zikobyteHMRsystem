@@ -1,6 +1,8 @@
 import bcrypt from 'bcrypt';
 import pg from 'pg';
 import 'dotenv/config';
+import { labSeedRows } from '../catalogue/lab-catalogue';
+import { medSeedRows } from '../catalogue/meds-catalogue';
 
 const { Pool } = pg;
 
@@ -596,12 +598,14 @@ export async function initializeDatabase(): Promise<void> {
           encounter_id VARCHAR(100) REFERENCES zmc_encounters(id) ON DELETE CASCADE,
           doctor_id VARCHAR(100) REFERENCES zmc_users(id) ON DELETE SET NULL,
           test_name VARCHAR(255) NOT NULL,
+          test_code VARCHAR(100),
           status VARCHAR(50) DEFAULT 'Pending',
           date_ordered TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
         ALTER TABLE zmc_laboratory_orders ADD COLUMN IF NOT EXISTS encounter_id VARCHAR(100) REFERENCES zmc_encounters(id) ON DELETE CASCADE;
         ALTER TABLE zmc_laboratory_orders ADD COLUMN IF NOT EXISTS price NUMERIC(10, 2) DEFAULT 0;
         ALTER TABLE zmc_laboratory_orders ADD COLUMN IF NOT EXISTS category VARCHAR(100);
+        ALTER TABLE zmc_laboratory_orders ADD COLUMN IF NOT EXISTS test_code VARCHAR(100);
 
         -- 9. Laboratory Results table
         CREATE TABLE IF NOT EXISTS zmc_laboratory_results (
@@ -613,6 +617,20 @@ export async function initializeDatabase(): Promise<void> {
           findings TEXT,
           status VARCHAR(50) DEFAULT 'Completed',
           date_completed TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+
+        -- 9b. Pricing Review Queue — unknown test or medication codes parked here
+        -- instead of silent fallback pricing. Never stores amounts.
+        CREATE TABLE IF NOT EXISTS zmc_pricing_review (
+          id VARCHAR(100) PRIMARY KEY,
+          kind VARCHAR(50) NOT NULL,
+          code VARCHAR(100),
+          name TEXT NOT NULL,
+          patient_id VARCHAR(100),
+          encounter_id VARCHAR(100),
+          requested_by VARCHAR(255),
+          status VARCHAR(50) DEFAULT 'Pending',
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
 
         -- 10. Pharmacy Orders table
@@ -631,6 +649,7 @@ export async function initializeDatabase(): Promise<void> {
         ALTER TABLE zmc_pharmacy_orders ADD COLUMN IF NOT EXISTS dosage VARCHAR(100);
         ALTER TABLE zmc_pharmacy_orders ADD COLUMN IF NOT EXISTS frequency VARCHAR(100);
         ALTER TABLE zmc_pharmacy_orders ADD COLUMN IF NOT EXISTS duration VARCHAR(100);
+        ALTER TABLE zmc_pharmacy_orders ADD COLUMN IF NOT EXISTS medication_code VARCHAR(100);
 
         -- 11. Invoices table
         CREATE TABLE IF NOT EXISTS zmc_invoices (
@@ -702,6 +721,12 @@ export async function initializeDatabase(): Promise<void> {
         ALTER TABLE zmc_invoices ADD COLUMN IF NOT EXISTS balance DECIMAL(10,2) DEFAULT 0;
         ALTER TABLE zmc_payments ADD COLUMN IF NOT EXISTS total_bill DECIMAL(10,2) DEFAULT 0;
         ALTER TABLE zmc_payments ADD COLUMN IF NOT EXISTS balance DECIMAL(10,2) DEFAULT 0;
+        -- Phase 2 billing: idempotency + audit-note support on payments.
+        -- description carries [IDEMPOTENCY:<key>] tags (POST / + POST /partial replay
+        -- lookup) and human handover notes (e.g. emergency intake). idempotency_key
+        -- stores the raw client key for exact-match use. Both nullable/online-safe.
+        ALTER TABLE zmc_payments ADD COLUMN IF NOT EXISTS description TEXT;
+        ALTER TABLE zmc_payments ADD COLUMN IF NOT EXISTS idempotency_key VARCHAR(255);
 
         -- 13. Wards table
         CREATE TABLE IF NOT EXISTS zmc_wards (
@@ -1154,48 +1179,12 @@ export async function initializeDatabase(): Promise<void> {
             { id: 'pc-9', item_code: 'CONSULTATION_GENERAL', item_name: 'General Outpatient Consultation Fee', price: 2000.00, category: 'Service' },
             { id: 'pc-10', item_code: 'CONSULTATION_MATERNITY', item_name: 'Maternity Consultation Fee', price: 3000.00, category: 'Service' },
 
-            // CHEMISTRY
-            { id: 'pc-lab-1', item_code: 'LAB_LFT', item_name: 'Liver Function Test (LFT)', price: 15000.00, category: 'Laboratory' },
-            { id: 'pc-lab-2', item_code: 'LAB_EUC', item_name: 'Electrolyte, Urea, Creatinine (E/U/C)', price: 15000.00, category: 'Laboratory' },
-            { id: 'pc-lab-3', item_code: 'LAB_LIPID', item_name: 'Lipid Profile', price: 15000.00, category: 'Laboratory' },
-            { id: 'pc-lab-4', item_code: 'LAB_PSA', item_name: 'Prostate Specific Antigen (PSA)', price: 18000.00, category: 'Laboratory' },
-            { id: 'pc-lab-5', item_code: 'LAB_CHOLESTEROL', item_name: 'Cholesterol', price: 7000.00, category: 'Laboratory' },
-            { id: 'pc-lab-6', item_code: 'LAB_RBS', item_name: 'Random Blood Sugar (RBS)', price: 1500.00, category: 'Laboratory' },
-            { id: 'pc-lab-7', item_code: 'LAB_FBS', item_name: 'Fasting Blood Sugar (FBS)', price: 1500.00, category: 'Laboratory' },
-            { id: 'pc-lab-8', item_code: 'LAB_FBC_CHEM', item_name: 'Full Blood Count (FBC)', price: 7000.00, category: 'Laboratory' },
-            { id: 'pc-lab-9', item_code: 'LAB_HORMONAL_ASSAY', item_name: 'Hormonal Assay', price: 60000.00, category: 'Laboratory' },
-            { id: 'pc-lab-10', item_code: 'LAB_HBA1C', item_name: 'HbA1c (Glycated Sugar)', price: 7000.00, category: 'Laboratory' },
-            { id: 'pc-lab-11', item_code: 'LAB_UA_CHEM', item_name: 'Urine Analysis (UA)', price: 2500.00, category: 'Laboratory' },
-            { id: 'pc-lab-12', item_code: 'LAB_FOB', item_name: 'Faecal Occult Blood Test (FOB)', price: 3000.00, category: 'Laboratory' },
-            { id: 'pc-lab-13', item_code: 'LAB_PT_HCG', item_name: 'Pregnancy Test – PT (HCG)', price: 2500.00, category: 'Laboratory' },
-
-            // SEROLOGY
-            { id: 'pc-lab-14', item_code: 'LAB_WIDAL', item_name: 'Widal Test', price: 7000.00, category: 'Laboratory' },
-            { id: 'pc-lab-15', item_code: 'LAB_HBSAG', item_name: 'Hepatitis B (HBsAg)', price: 3500.00, category: 'Laboratory' },
-            { id: 'pc-lab-16', item_code: 'LAB_HCV', item_name: 'Hepatitis C (HCV)', price: 3500.00, category: 'Laboratory' },
-            { id: 'pc-lab-17', item_code: 'LAB_VDRL', item_name: 'VDRL (Syphilis)', price: 3500.00, category: 'Laboratory' },
-            { id: 'pc-lab-18', item_code: 'LAB_RVS', item_name: 'Retroviral Screening (RVS)', price: 5000.00, category: 'Laboratory' },
-
-            // HAEMATOLOGY
-            { id: 'pc-lab-19', item_code: 'LAB_HB', item_name: 'Blood Percentage (HB)', price: 1500.00, category: 'Laboratory' },
-            { id: 'pc-lab-20', item_code: 'LAB_BG', item_name: 'Blood Group (BG)', price: 4000.00, category: 'Laboratory' },
-            { id: 'pc-lab-21', item_code: 'LAB_GT', item_name: 'Genotype (GT)', price: 8000.00, category: 'Laboratory' },
-
-            // MICROBIOLOGY
-            { id: 'pc-lab-22', item_code: 'LAB_EAR_SWAB_MCS', item_name: 'EAR SWAB M/C/S', price: 7000.00, category: 'Laboratory' },
-            { id: 'pc-lab-23', item_code: 'LAB_HVS_MCS', item_name: 'HVS M/C/S', price: 7000.00, category: 'Laboratory' },
-            { id: 'pc-lab-24', item_code: 'LAB_URINE_MCS', item_name: 'Urine M/C/S', price: 7000.00, category: 'Laboratory' },
-            { id: 'pc-lab-25', item_code: 'LAB_PUS_SWAB_MCS', item_name: 'Pus Swab M/C/S', price: 10000.00, category: 'Laboratory' },
-            { id: 'pc-lab-26', item_code: 'LAB_SEMEN_MCS', item_name: 'Semen Culture M/C/S', price: 15000.00, category: 'Laboratory' },
-            { id: 'pc-lab-27', item_code: 'LAB_URETHRAL_SWAB_MCS', item_name: 'Urethral Swab M/C/S', price: 7000.00, category: 'Laboratory' },
-            { id: 'pc-lab-28', item_code: 'LAB_STOOL_MCS', item_name: 'Stool Culture M/C/S', price: 15000.00, category: 'Laboratory' },
-            { id: 'pc-lab-29', item_code: 'LAB_SPUTUM_MCS', item_name: 'Sputum M/C/S', price: 10000.00, category: 'Laboratory' },
-            { id: 'pc-lab-30', item_code: 'LAB_HP', item_name: 'H. pylori (HP)', price: 5000.00, category: 'Laboratory' },
-
-            // PARASITOLOGY
-            { id: 'pc-lab-31', item_code: 'LAB_STOOL_ANALYSIS', item_name: 'Stool Analysis', price: 5000.00, category: 'Laboratory' },
-            { id: 'pc-lab-32', item_code: 'LAB_MICRO_FILIARIASIS', item_name: 'Microfilaria (MF)', price: 5000.00, category: 'Laboratory' },
-            { id: 'pc-lab-33', item_code: 'LAB_MALARIA_PARASITE', item_name: 'Malaria Parasite (MP)', price: 3000.00, category: 'Laboratory' },
+            // Laboratory rows come from the single canonical writer so seed
+            // prices always match src/backend/catalogue/lab-catalogue.ts.
+            ...labSeedRows(),
+            // Pharmacy rows come from the single canonical writer so seed
+            // prices always match src/backend/catalogue/meds-catalogue.ts.
+            ...medSeedRows(),
           ];
           for (const item of initialPrices) {
             await pool.query(`

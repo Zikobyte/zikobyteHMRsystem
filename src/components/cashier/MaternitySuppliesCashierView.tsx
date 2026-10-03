@@ -68,6 +68,7 @@ export default function MaternitySuppliesCashierView({
   const [isBalancingId, setIsBalancingId] = useState<string | null>(null);
   const [balanceModalRecord, setBalanceModalRecord] = useState<MaternityHandoverRecord | null>(null);
   const [cashierNotes, setCashierNotes] = useState('');
+  const [bannerError, setBannerError] = useState('');
 
   // Calculations
   const pendingRecords = records.filter(r => r.status === 'Pending Handover');
@@ -112,13 +113,14 @@ export default function MaternitySuppliesCashierView({
       if (res && res.success) {
         setBalanceModalRecord(null);
         setCashierNotes('');
+        setBannerError('');
         onRefresh();
         if (onBalanceSuccess) onBalanceSuccess();
       } else {
-        alert(res?.error || 'Failed to balance cash handover.');
+        setBannerError(res?.error || 'Failed to balance cash handover.');
       }
     } catch (err: any) {
-      alert('Error balancing cash handover: ' + err.message);
+      setBannerError('Error balancing cash handover: ' + err.message);
     } finally {
       setIsBalancingId(null);
     }
@@ -126,6 +128,20 @@ export default function MaternitySuppliesCashierView({
 
   return (
     <div className="space-y-6">
+      {bannerError && (
+        <div role="alert" aria-live="assertive" className="flex items-start gap-3 bg-rose-50 border border-rose-200 text-rose-900 rounded-2xl px-4 py-3 text-xs font-semibold">
+          <AlertCircle className="h-4 w-4 mt-0.5 shrink-0 text-rose-500" />
+          <p className="flex-1">{bannerError}</p>
+          <button
+            type="button"
+            onClick={() => setBannerError('')}
+            aria-label="Dismiss error"
+            className="text-rose-400 hover:text-rose-700 rounded p-0.5 cursor-pointer"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      )}
       {/* Top Banner & Header */}
       <div className="bg-gradient-to-r from-pink-50 via-rose-50 to-amber-50 rounded-3xl p-6 border border-pink-200/80 shadow-xs relative overflow-hidden">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 relative z-10">

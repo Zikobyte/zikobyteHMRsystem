@@ -1,11 +1,113 @@
 import { Router } from 'express';
-import { query, generateUUID } from '../../database/db.repo';
+import { query, generateUUID, getPostgresPool, getPostgresStatus } from '../../database/db.repo';
 import { authenticateJWT, authorizeRoles } from '../../middleware/auth.middleware';
 import { broadcastNotification } from '../../utils/ws.util';
+import { validateRecordPayment, validatePartial, validateSettle, validateDiscountRequest, validateDiscountDecision } from './payments.validator';
 
 const router = Router();
 
 router.use(authenticateJWT as any);
+
+// Financial read roles: Cashier-family + admin bypass. Used on ledger /
+// revenue / outstanding / discount-list reads (minimum-necessary, NDPR).
+const FINANCIAL_READ_ROLES = ['Cashier', 'Account Officer', 'Accountant', 'Administrator', 'Management', 'IT Administrator'] as string[];
+// Discount decisions are HR-owned; Cashier is explicitly excluded to enforce
+// separation of duties (requester != approver).
+const DISCOUNT_DECISION_ROLES = ['Human Resources', 'HR Manager', 'Human Resource Manager', 'Administrator', 'Management', 'IT Administrator'] as string[];
+
+// Billing audit helper: INSERT into zmc_audit_logs (id, user_id, user_name,
+// user_role, action, details, timestamp NOW(), ip_address). Details carry only
+// patientId + amount (no excessive PHI). Failures are logged, never break billing.
+async function logBillingAudit(req: any, action: string, patientId: string, amount?: number | string): Promise<void> {
+  try {
+    await query(
+      `INSERT INTO zmc_audit_logs (id, user_id, user_name, user_role, action, details, timestamp, ip_address)
+       VALUES ($1, $2, $3, $4, $5, $6, NOW(), $7)`,
+      [
+        generateUUID(),
+        req.user?.id || null,
+        req.user?.name || req.user?.username || 'Unknown',
+        req.user?.role || 'Unknown',
+        action,
+        `patientId=${patientId} amount=${amount ?? 'n/a'}`,
+        req.ip || null,
+      ]
+    );
+  } catch (e) {
+    console.warn('Billing audit log failed:', (e as any)?.message);
+  }
+}
+
+// Phase 2 — Postgres transaction wrapper for multi-table billing writes.
+// Uses getPostgresPool().connect() + BEGIN, COMMIT on success, ROLLBACK on error,
+// release() in finally. Falls back to the existing plain query() path when no pool
+// is active (getPostgresStatus().isPostgresActive false) to preserve in-memory dev
+// mode. The callback receives `q` with the same (text, params) signature as query().
+// Callers must collect broadcastNotification payloads inside the callback and flush
+// them AFTER commit (and call logBillingAudit post-commit) so a ROLLBACK never
+// emits phantom notifications or audit rows. All statements stay parameterized ($1).
+async function withBillingTransaction<T>(
+  fn: (q: (text: string, params?: any[]) => Promise<any>) => Promise<T>
+): Promise<T> {
+  const pool = getPostgresPool();
+  const { isPostgresActive } = getPostgresStatus();
+  if (!pool || !isPostgresActive) {
+    return fn((text, params) => query(text, params));
+  }
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const result = await fn((text, params) => client.query(text, params));
+    await client.query('COMMIT');
+    return result;
+  } catch (err) {
+    try {
+      await client.query('ROLLBACK');
+    } catch {
+      // Ignore rollback errors — the original error takes precedence.
+    }
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+// Idempotency contract (best-effort, 5-minute window) for POST / and POST /partial:
+// Clients may send `idempotencyKey` (preferred) or `clientRef` (alias). When present,
+// the key is persisted in zmc_payments.description as `[IDEMPOTENCY:<key>]` (plus raw
+// key in zmc_payments.idempotency_key — see DDL ALTERs in db.repo.ts) and a pre-insert
+// lookup (description LIKE %[IDEMPOTENCY:<key>]% AND date_paid > NOW() - 5 min) returns
+// the existing row instead of inserting a duplicate. Best-effort only: no UNIQUE
+// constraint (keeps the migration online-safe), so a tight concurrent race can still
+// insert twice — clients must retry with the same key and accept the first committed
+// row. LIKE wildcards in the key are escaped; the lookup stays parameterized ($1).
+function extractIdempotencyKey(body: any): string | null {
+  const raw = body?.idempotencyKey ?? body?.clientRef;
+  if (typeof raw !== 'string') return null;
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+  return trimmed.slice(0, 128);
+}
+
+function idempotencyTag(key: string): string {
+  return `[IDEMPOTENCY:${key}]`;
+}
+
+function escapeLike(s: string): string {
+  return s.replace(/[\\%_]/g, (m) => `\\${m}`);
+}
+
+async function findRecentIdempotentPayment(
+  q: (text: string, params?: any[]) => Promise<any>,
+  key: string
+): Promise<any | null> {
+  const pattern = `%${escapeLike(idempotencyTag(key))}%`;
+  const res = await q(
+    `SELECT * FROM zmc_payments WHERE description LIKE $1 ESCAPE '\\' AND date_paid > NOW() - INTERVAL '5 minutes' ORDER BY date_paid DESC LIMIT 1`,
+    [pattern]
+  );
+  return res.rows[0] || null;
+}
 
 // Helper to verify encounter_id and invoice_id exist in DB before inserting into zmc_payments
 async function sanitizeEncounterAndInvoice(encounterId?: any, invoiceId?: any) {
@@ -38,13 +140,17 @@ async function sanitizeEncounterAndInvoice(encounterId?: any, invoiceId?: any) {
 }
 
 // Confirm/Approve a pending unconfirmed payment - Cashier, Administrator, Management
+// Contract: POST /api/payments/:id/confirm | Params: {id} | Auth: Cashier/Admin/Mgmt
+// Response: {success, message} | Errors: 404 record not found, 400 already completed.
+// Narrow Paid marking: invoice scoped to id OR patient+encounter (never whole-patient OR).
+// Txn: payment + invoice + encounter + queue writes atomic via withBillingTransaction.
 router.post(
   '/:id/confirm',
   authorizeRoles(['Cashier', 'Administrator', 'Management']) as any,
   async (req: any, res: any) => {
     try {
       const { id } = req.params;
-      
+
       // Fetch current payment record
       const paymentCheck = await query('SELECT * FROM zmc_payments WHERE id = $1', [id]);
       if (paymentCheck.rows.length === 0) {
@@ -56,35 +162,45 @@ router.post(
         return res.status(400).json({ success: false, error: 'Payment is already confirmed and completed' });
       }
 
+      const patientId = payment.patient_id;
+      const encounterId = payment.encounter_id;
+      const invoiceId = payment.invoice_id;
+
+      // Phase 2: the payment/invoice/encounter/queue writes below run inside a
+      // Postgres transaction. Notifications are collected and flushed only after
+      // COMMIT; the billing audit is written post-commit as well.
+      const pendingNotifications: any[] = [];
+      await withBillingTransaction(async (q) => {
       // Update payment status to Completed
-      await query(`
+      await q(`
         UPDATE zmc_payments
         SET status = 'Completed', date_paid = NOW(), collected_by = $1
         WHERE id = $2
       `, [req.user?.id || payment.collected_by, id]);
 
-      const patientId = payment.patient_id;
-      const encounterId = payment.encounter_id;
-      const invoiceId = payment.invoice_id;
+      // SECURITY FIX (over-broad Paid marking): scope to single invoice OR
+      // single patient+encounter — never `WHERE patient_id=$1 OR id=$2`.
+      if (invoiceId) {
+        await q(`UPDATE zmc_invoices SET status = 'Paid' WHERE id = $1`, [invoiceId]);
+      } else if (encounterId) {
+        await q(`UPDATE zmc_invoices SET status = 'Paid' WHERE patient_id = $1 AND encounter_id = $2`, [patientId, encounterId]);
+      }
 
-      // Always mark all unpaid invoices for this patient as Paid
-      await query(`
-        UPDATE zmc_invoices
-        SET status = 'Paid'
-        WHERE patient_id = $1 OR id = $2
-      `, [patientId, invoiceId || null]);
-
-      // Always mark all encounters for this patient as Paid
-      await query(`
-        UPDATE zmc_encounters
-        SET payment_status = 'Paid'
-        WHERE patient_id = $1 OR id = $2
-      `, [patientId, encounterId || null]);
+      // Same scoping for encounters: single encounter id only.
+      if (encounterId) {
+        await q(`UPDATE zmc_encounters SET payment_status = 'Paid' WHERE id = $1`, [encounterId]);
+      } else if (invoiceId) {
+        const invEnc = await q('SELECT encounter_id FROM zmc_invoices WHERE id = $1', [invoiceId]);
+        const resolvedEnc = invEnc.rows[0]?.encounter_id || null;
+        if (resolvedEnc) {
+          await q(`UPDATE zmc_encounters SET payment_status = 'Paid' WHERE id = $1`, [resolvedEnc]);
+        }
+      }
 
       // --- STAGE TRANSITION AUTOMATION ON HANDOVER CONFIRMATION ---
-      
+
       // 1. Check for active queue item of type 'Cashier Consultation Payment'
-      const consultQueueCheck = await query(`
+      const consultQueueCheck = await q(`
         SELECT * FROM zmc_patient_queue
         WHERE patient_id = $1 AND queue_type = 'Cashier Consultation Payment' AND status = 'Waiting'
         LIMIT 1
@@ -93,31 +209,31 @@ router.post(
       if (consultQueueCheck.rows.length > 0) {
         const qItem = consultQueueCheck.rows[0];
         // Complete the cashier payment queue item
-        await query(`
+        await q(`
           UPDATE zmc_patient_queue
           SET status = 'Completed', processed_at = NOW(), processed_by = $1
           WHERE id = $2
         `, [req.user?.username || 'Cashier', qItem.id]);
 
         // Update encounter status to 'Pending Consultation'
-        await query(`
+        await q(`
           UPDATE zmc_encounters
           SET clinical_status = 'Pending Consultation', payment_status = 'Paid'
           WHERE id = $1
         `, [qItem.encounter_id]);
 
         // Queue to Doctor Consultation!
-        await query(`
+        await q(`
           INSERT INTO zmc_patient_queue (id, encounter_id, patient_id, queue_type, priority, status, arrival_time)
           VALUES ($1, $2, $3, 'Doctor Consultation', $4, 'Waiting', NOW())
         `, [generateUUID(), qItem.encounter_id, patientId, qItem.priority]);
 
         // Set patient status
-        await query("UPDATE zmc_patients SET status = 'Waiting for Doctor' WHERE id = $1", [patientId]);
+        await q("UPDATE zmc_patients SET status = 'Waiting for Doctor' WHERE id = $1", [patientId]);
       }
 
       // 2. Check for active queue item of type 'Cashier Lab Payment'
-      const labQueueCheck = await query(`
+      const labQueueCheck = await q(`
         SELECT * FROM zmc_patient_queue
         WHERE patient_id = $1 AND (queue_type = 'Cashier Lab Payment' OR queue_type = 'Cashier Desk') AND (status = 'Waiting' OR status = 'Processing')
         LIMIT 1
@@ -126,32 +242,32 @@ router.post(
       if (labQueueCheck.rows.length > 0) {
         const qItem = labQueueCheck.rows[0];
         // Complete the cashier lab payment queue item
-        await query(`
+        await q(`
           UPDATE zmc_patient_queue
           SET status = 'Completed', processed_at = NOW(), processed_by = $1
           WHERE id = $2
         `, [req.user?.username || 'Cashier', qItem.id]);
 
         // Queue to Laboratory queue!
-        await query(`
+        await q(`
           INSERT INTO zmc_patient_queue (id, encounter_id, patient_id, queue_type, priority, status, arrival_time)
           VALUES ($1, $2, $3, 'Laboratory', $4, 'Waiting', NOW())
         `, [generateUUID(), qItem.encounter_id, patientId, qItem.priority || 'Routine']);
 
         // Set patient status
-        await query("UPDATE zmc_patients SET status = 'Waiting for Laboratory' WHERE id = $1", [patientId]);
-        await query("UPDATE zmc_encounters SET clinical_status = 'Waiting for Laboratory' WHERE id = $1", [qItem.encounter_id]);
+        await q("UPDATE zmc_patients SET status = 'Waiting for Laboratory' WHERE id = $1", [patientId]);
+        await q("UPDATE zmc_encounters SET clinical_status = 'Waiting for Laboratory' WHERE id = $1", [qItem.encounter_id]);
 
-        // Broadcast to Laboratory Scientist
-        const patRes = await query('SELECT name FROM zmc_patients WHERE id = $1', [patientId]);
+        // Collected for post-commit flush (see withBillingTransaction contract).
+        const patRes = await q('SELECT name FROM zmc_patients WHERE id = $1', [patientId]);
         const patName = patRes.rows[0]?.name || 'Patient';
-        broadcastNotification({
+        pendingNotifications.push({
           type: 'PATIENT_ROUTED_TO_LAB',
           targetRole: 'Laboratory Scientist',
           message: `Payment confirmed for ${patName}! Patient routed to Laboratory under Regular Lab Queue.`,
           patientId
         });
-        broadcastNotification({
+        pendingNotifications.push({
           type: 'LAB_ORDER_CREATED',
           targetRole: 'Laboratory Scientist',
           message: `New lab tests paid for ${patName}.`,
@@ -159,7 +275,7 @@ router.post(
         });
       } else {
         // Fallback: Check if patient has an encounter waiting for lab payment or a lab invoice
-        const openLabEnc = await query(`
+        const openLabEnc = await q(`
           SELECT e.id, e.priority FROM zmc_encounters e
           JOIN zmc_invoices i ON i.encounter_id = e.id
           WHERE e.patient_id = $1 AND (e.clinical_status = 'Waiting for Lab Payment' OR i.description ILIKE '%Laboratory%')
@@ -170,23 +286,23 @@ router.post(
           const encId = openLabEnc.rows[0].id;
           const prio = openLabEnc.rows[0].priority || 'Routine';
 
-          const existingLabQ = await query(`
+          const existingLabQ = await q(`
             SELECT id FROM zmc_patient_queue
             WHERE encounter_id = $1 AND queue_type = 'Laboratory' AND (status = 'Waiting' OR status = 'Processing')
           `, [encId]);
 
           if (existingLabQ.rows.length === 0) {
-            await query(`
+            await q(`
               INSERT INTO zmc_patient_queue (id, encounter_id, patient_id, queue_type, priority, status, arrival_time)
               VALUES ($1, $2, $3, 'Laboratory', $4, 'Waiting', NOW())
             `, [generateUUID(), encId, patientId, prio]);
 
-            await query("UPDATE zmc_patients SET status = 'Waiting for Laboratory' WHERE id = $1", [patientId]);
-            await query("UPDATE zmc_encounters SET clinical_status = 'Waiting for Laboratory' WHERE id = $1", [encId]);
+            await q("UPDATE zmc_patients SET status = 'Waiting for Laboratory' WHERE id = $1", [patientId]);
+            await q("UPDATE zmc_encounters SET clinical_status = 'Waiting for Laboratory' WHERE id = $1", [encId]);
 
-            const patRes = await query('SELECT name FROM zmc_patients WHERE id = $1', [patientId]);
+            const patRes = await q('SELECT name FROM zmc_patients WHERE id = $1', [patientId]);
             const patName = patRes.rows[0]?.name || 'Patient';
-            broadcastNotification({
+            pendingNotifications.push({
               type: 'PATIENT_ROUTED_TO_LAB',
               targetRole: 'Laboratory Scientist',
               message: `Payment confirmed for ${patName}! Patient routed to Laboratory under Regular Lab Queue.`,
@@ -197,7 +313,7 @@ router.post(
       }
 
       // 3. Check for active queue item of type 'Cashier Pharmacy Payment'
-      const pharmQueueCheck = await query(`
+      const pharmQueueCheck = await q(`
         SELECT * FROM zmc_patient_queue
         WHERE patient_id = $1 AND queue_type = 'Cashier Pharmacy Payment' AND status = 'Waiting'
         LIMIT 1
@@ -206,41 +322,46 @@ router.post(
       if (pharmQueueCheck.rows.length > 0) {
         const qItem = pharmQueueCheck.rows[0];
         // Complete the cashier pharmacy payment queue item
-        await query(`
+        await q(`
           UPDATE zmc_patient_queue
           SET status = 'Completed', processed_at = NOW(), processed_by = $1
           WHERE id = $2
         `, [req.user?.username || 'Cashier', qItem.id]);
 
         // Queue to Pharmacy queue!
-        await query(`
+        await q(`
           INSERT INTO zmc_patient_queue (id, encounter_id, patient_id, queue_type, priority, status, arrival_time)
           VALUES ($1, $2, $3, 'Pharmacy', $4, 'Waiting', NOW())
         `, [generateUUID(), qItem.encounter_id, patientId, qItem.priority]);
 
         // Set patient status
-        await query("UPDATE zmc_patients SET status = 'Waiting for Pharmacy' WHERE id = $1", [patientId]);
-        await query("UPDATE zmc_encounters SET clinical_status = 'Waiting for Pharmacy' WHERE id = $1", [qItem.encounter_id]);
+        await q("UPDATE zmc_patients SET status = 'Waiting for Pharmacy' WHERE id = $1", [patientId]);
+        await q("UPDATE zmc_encounters SET clinical_status = 'Waiting for Pharmacy' WHERE id = $1", [qItem.encounter_id]);
       }
 
       // Cleanup any remaining waiting Cashier queue items for this patient
-      await query(`
+      await q(`
         UPDATE zmc_patient_queue
         SET status = 'Completed', processed_at = NOW(), processed_by = $1
         WHERE patient_id = $2 AND (queue_type LIKE 'Cashier%' OR queue_type = 'Cashier Desk') AND status = 'Waiting'
       `, [req.user?.username || 'Cashier', patientId]);
 
-      // Fetch patient details for notification
-      const patientRes = await query('SELECT name FROM zmc_patients WHERE id = $1', [patientId]);
+      // Fetch patient details for notification (message built now, flushed post-commit)
+      const patientRes = await q('SELECT name FROM zmc_patients WHERE id = $1', [patientId]);
       const patientName = patientRes.rows[0]?.name || 'Outpatient';
 
-      broadcastNotification({
+      pendingNotifications.push({
         type: 'PAYMENT_HANDOVER_CONFIRMED',
         targetRole: 'Cashier',
         message: `Handover confirmed! ₦${parseFloat(payment.amount).toLocaleString()} collected for ${patientName} is now balanced.`,
         patientId,
         data: { paymentId: id }
       });
+      }); // end withBillingTransaction (POST /:id/confirm)
+
+      for (const n of pendingNotifications) broadcastNotification(n);
+
+      await logBillingAudit(req, 'PAYMENT_CONFIRMED', patientId, payment.amount);
 
       res.json({ success: true, message: 'Payment successfully confirmed and balanced.' });
     } catch (err: any) {
@@ -514,6 +635,10 @@ router.post(
 );
 
 // Confirm walk-in patient payment manually or from Cashier
+// Contract: POST /api/payments/lab/confirm-walk-in | Body: {patientId, encounterId?, invoiceId?, amount, paymentMethod?}
+// Response: {success, message} | Errors: 400 patientId required.
+// Audit: WALKIN_PAYMENT_CONFIRMED with patientId + amount.
+// Txn: payment + invoice + encounter + queue + lab_payments + outstanding writes atomic via withBillingTransaction.
 router.post(
   '/lab/confirm-walk-in',
   authorizeRoles(['Cashier', 'Account Officer', 'Laboratory Scientist', 'Lab Technician', 'Scientist', 'Administrator', 'IT Administrator', 'Management']) as any,
@@ -526,15 +651,19 @@ router.post(
 
       const { validEncounterId, validInvoiceId } = await sanitizeEncounterAndInvoice(encounterId, invoiceId);
 
+      // Phase 2: all writes below run inside a Postgres transaction; the lab
+      // notification is flushed only after COMMIT, audit post-commit as well.
+      const pendingNotifications: any[] = [];
+      await withBillingTransaction(async (q) => {
       // Update or insert payment
-      const payUpdate = await query(`
+      const payUpdate = await q(`
         UPDATE zmc_payments
         SET status = 'Completed', amount = $1, date_paid = NOW(), payment_method = $2, collected_by = $3
         WHERE (encounter_id IS NOT NULL AND encounter_id = $4) OR (patient_id = $5 AND status = 'Unconfirmed')
       `, [amount || 0, paymentMethod || 'Cash', req.user?.username || 'Cashier', validEncounterId, patientId]);
 
       if (payUpdate.rowCount === 0) {
-        await query(`
+        await q(`
           INSERT INTO zmc_payments (id, patient_id, encounter_id, invoice_id, amount, status, date_paid, payment_method, collected_by)
           VALUES ($1, $2, $3, $4, $5, 'Completed', NOW(), $6, $7)
         `, [generateUUID(), patientId, validEncounterId, validInvoiceId, amount || 0, paymentMethod || 'Cash', req.user?.username || 'Cashier']);
@@ -542,29 +671,29 @@ router.post(
 
       // Update invoice
       if (invoiceId) {
-        await query("UPDATE zmc_invoices SET status = 'Paid' WHERE id = $1", [invoiceId]);
+        await q("UPDATE zmc_invoices SET status = 'Paid' WHERE id = $1", [invoiceId]);
       } else {
-        await query("UPDATE zmc_invoices SET status = 'Paid' WHERE encounter_id = $1", [encounterId]);
+        await q("UPDATE zmc_invoices SET status = 'Paid' WHERE encounter_id = $1", [encounterId]);
       }
 
       // Update encounter & patient status
-      await query("UPDATE zmc_encounters SET payment_status = 'Paid', clinical_status = 'Waiting for Laboratory' WHERE id = $1", [encounterId]);
-      await query("UPDATE zmc_patients SET status = 'Waiting for Laboratory' WHERE id = $1", [patientId]);
+      await q("UPDATE zmc_encounters SET payment_status = 'Paid', clinical_status = 'Waiting for Laboratory' WHERE id = $1", [encounterId]);
+      await q("UPDATE zmc_patients SET status = 'Waiting for Laboratory' WHERE id = $1", [patientId]);
 
       // Move queue item from Cashier Lab Payment -> Laboratory
-      await query(`
+      await q(`
         UPDATE zmc_patient_queue
         SET queue_type = 'Laboratory', status = 'Waiting', arrival_time = NOW()
         WHERE encounter_id = $1
       `, [encounterId]);
 
       // Record permanent lab payment entry in zmc_lab_payments
-      const patRes = await query('SELECT name, hospital_number, card_type FROM zmc_patients WHERE id = $1', [patientId]);
+      const patRes = await q('SELECT name, hospital_number, card_type FROM zmc_patients WHERE id = $1', [patientId]);
       const pat = patRes.rows[0] || {};
-      const invRes = invoiceId ? await query('SELECT description FROM zmc_invoices WHERE id = $1', [invoiceId]) : { rows: [] };
+      const invRes = invoiceId ? await q('SELECT description FROM zmc_invoices WHERE id = $1', [invoiceId]) : { rows: [] };
       const invDesc = invRes.rows[0]?.description || 'Walk-In Laboratory Investigations';
 
-      await query(`
+      await q(`
         INSERT INTO zmc_lab_payments (id, patient_id, patient_name, hospital_number, card_type, tests_summary, amount, payment_method, date_paid, collected_by, encounter_id, invoice_id)
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), $9, $10, $11)
       `, [
@@ -585,26 +714,31 @@ router.post(
       const paidAmt = parseFloat(amount || 0);
       if (totalB > paidAmt) {
         const bal = totalB - paidAmt;
-        await query(`
+        await q(`
           INSERT INTO zmc_outstanding_balances (id, patient_id, patient_name, hospital_number, encounter_id, invoice_id, purpose, department, total_bill, amount_paid, balance, status, created_at, updated_at)
           VALUES ($1, $2, $3, $4, $5, $6, $7, 'Laboratory', $8, $9, $10, 'Owing', NOW(), NOW())
         `, [generateUUID(), patientId, pat.name || 'Walk-In Outpatient', pat.hospital_number || '—', encounterId, invoiceId || null, invDesc || 'Walk-In Laboratory Investigations', totalB, paidAmt, bal]);
 
-        const sumRes = await query(`
+        const sumRes = await q(`
           SELECT COALESCE(SUM(balance), 0) as remaining_total
           FROM zmc_outstanding_balances
           WHERE patient_id = $1 AND status = 'Owing'
         `, [patientId]);
         const remainingTotal = parseFloat(sumRes.rows[0].remaining_total || '0');
-        await query('UPDATE zmc_patients SET outstanding_balance = $1 WHERE id = $2', [remainingTotal, patientId]);
+        await q('UPDATE zmc_patients SET outstanding_balance = $1 WHERE id = $2', [remainingTotal, patientId]);
       }
 
-      broadcastNotification({
+      pendingNotifications.push({
         type: 'LAB_WALK_IN_PAID',
         targetRole: 'Laboratory Scientist',
         message: `Walk-in patient ${pat.name || ''} payment confirmed (₦${(amount || 0).toLocaleString()}). Ready for lab testing.`,
         patientId
       });
+      }); // end withBillingTransaction (lab confirm-walk-in)
+
+      for (const n of pendingNotifications) broadcastNotification(n);
+
+      await logBillingAudit(req, 'WALKIN_PAYMENT_CONFIRMED', patientId, amount || 0);
 
       res.json({
         success: true,
@@ -618,9 +752,15 @@ router.post(
 );
 
 // Create a payment - all clinical staff (forced to Unconfirmed unless Cashier/Admin/Mgmt)
+// Contract: POST /api/payments/ | Body: {patientId*, amount*>0, paymentMethod in [Cash,POS,Transfer], invoiceId?, encounterId?, status?, idempotencyKey?|clientRef?}
+// Response 201: {success, data:{id,patientId,invoiceId,amount,status,datePaid,paymentMethod,collectedBy}}
+//   Idempotent replay (same key within 5 min): 200 {success, deduplicated:true, data:{...existing}} — no duplicate insert.
+// Errors: 400 patientId/amount/paymentMethod invalid. Audit: PAYMENT_RECORDED (skipped on dedup replay).
+// Txn: insert + invoice/encounter/queue/lab_payments writes atomic via withBillingTransaction (fallback query() in dev).
 router.post(
   '/',
   authorizeRoles(['Cashier', 'Administrator', 'Management', 'Laboratory Scientist', 'Nurse', 'Receptionist', 'Doctor']) as any,
+  validateRecordPayment as any,
   async (req: any, res: any) => {
     try {
       const { patientId, invoiceId, amount, paymentMethod, status, encounterId } = req.body;
@@ -633,10 +773,29 @@ router.post(
       const isCashierAuthorized = (userRole === 'Cashier' || userRole === 'Administrator' || userRole === 'Management');
       const finalStatus = isCashierAuthorized ? (status || 'Completed') : 'Unconfirmed';
 
-      const result = await query(`
+      // Idempotency key (optional): body.idempotencyKey preferred, body.clientRef
+      // accepted as alias. See extractIdempotencyKey / contract comment above.
+      const idemKey = extractIdempotencyKey(req.body);
+
+      // Phase 2: the insert + invoice/encounter/queue/lab_payments writes below run
+      // inside a Postgres transaction. Notifications are collected and flushed only
+      // after COMMIT; the billing audit is written post-commit as well.
+      const pendingNotifications: any[] = [];
+      let created: any = null;
+      await withBillingTransaction(async (q) => {
+      // Idempotent replay within 5 min: reuse the existing row, skip duplicate insert.
+      if (idemKey) {
+        const existing = await findRecentIdempotentPayment(q, idemKey);
+        if (existing) {
+          created = { ...existing, __deduplicated: true };
+          return;
+        }
+      }
+
+      const result = await q(`
         INSERT INTO zmc_payments (
-          id, patient_id, encounter_id, invoice_id, amount, status, date_paid, payment_method, collected_by
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+          id, patient_id, encounter_id, invoice_id, amount, status, date_paid, payment_method, collected_by, description, idempotency_key
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
         RETURNING *
       `, [
         id,
@@ -647,12 +806,15 @@ router.post(
         finalStatus,
         datePaid,
         paymentMethod || 'Cash',
-        req.user?.id || null
+        req.user?.id || null,
+        idemKey ? `${idempotencyTag(idemKey)} Payment recorded via POST /api/payments.` : null,
+        idemKey || null
       ]);
+      created = result.rows[0];
 
       // If an invoice is associated and we're completing it, mark it as Paid
       if (invoiceId && finalStatus === 'Completed') {
-        await query(`
+        await q(`
           UPDATE zmc_invoices
           SET status = 'Paid'
           WHERE id = $1
@@ -662,10 +824,10 @@ router.post(
       // If we are recording an unconfirmed payment, trigger alert to cashier
       if (finalStatus === 'Unconfirmed') {
         // Fetch patient details for notification
-        const patientRes = await query('SELECT name FROM zmc_patients WHERE id = $1', [patientId]);
+        const patientRes = await q('SELECT name FROM zmc_patients WHERE id = $1', [patientId]);
         const patientName = patientRes.rows[0]?.name || 'Outpatient';
 
-        broadcastNotification({
+        pendingNotifications.push({
           type: 'DEPARTMENTAL_CASH_COLLECTED',
           targetRole: 'Cashier',
           message: `${userRole} collected ₦${parseFloat(amount).toLocaleString()} in cash/POS for patient ${patientName}. Awaiting handover confirmation.`,
@@ -675,22 +837,27 @@ router.post(
 
       // --- STAGE TRANSITION AUTOMATION ON PAYMENT (ONLY IF COMPLETED!) ---
       if (finalStatus === 'Completed') {
-        // Mark all unpaid invoices for this patient as Paid
-        await query(`
-          UPDATE zmc_invoices
-          SET status = 'Paid'
-          WHERE patient_id = $1 OR id = $2
-        `, [patientId, invoiceId || null]);
+        // SECURITY FIX: scope Paid marking to single invoice OR patient+encounter.
+        const scopedInvoiceId = validInvoiceId || invoiceId || null;
+        const scopedEncounterId = validEncounterId || encounterId || null;
+        if (scopedInvoiceId) {
+          await q(`UPDATE zmc_invoices SET status = 'Paid' WHERE id = $1`, [scopedInvoiceId]);
+        } else if (scopedEncounterId) {
+          await q(`UPDATE zmc_invoices SET status = 'Paid' WHERE patient_id = $1 AND encounter_id = $2`, [patientId, scopedEncounterId]);
+        }
 
-        // Mark all encounters for this patient as Paid
-        await query(`
-          UPDATE zmc_encounters
-          SET payment_status = 'Paid'
-          WHERE patient_id = $1 OR id = $2
-        `, [patientId, encounterId || null]);
+        if (scopedEncounterId) {
+          await q(`UPDATE zmc_encounters SET payment_status = 'Paid' WHERE id = $1`, [scopedEncounterId]);
+        } else if (scopedInvoiceId) {
+          const invEnc = await q('SELECT encounter_id FROM zmc_invoices WHERE id = $1', [scopedInvoiceId]);
+          const resolvedEnc = invEnc.rows[0]?.encounter_id || null;
+          if (resolvedEnc) {
+            await q(`UPDATE zmc_encounters SET payment_status = 'Paid' WHERE id = $1`, [resolvedEnc]);
+          }
+        }
 
         // 1. Check for active queue item of type 'Cashier Consultation Payment'
-        const consultQueueCheck = await query(`
+        const consultQueueCheck = await q(`
           SELECT * FROM zmc_patient_queue
           WHERE patient_id = $1 AND queue_type = 'Cashier Consultation Payment' AND status = 'Waiting'
           LIMIT 1
@@ -699,30 +866,30 @@ router.post(
         if (consultQueueCheck.rows.length > 0) {
           const qItem = consultQueueCheck.rows[0];
           // Complete the cashier payment queue item
-          await query(`
+          await q(`
             UPDATE zmc_patient_queue
             SET status = 'Completed', processed_at = NOW(), processed_by = $1
             WHERE id = $2
           `, [req.user?.username || 'Cashier', qItem.id]);
 
           // Update encounter status to 'Pending Consultation'
-          await query(`
+          await q(`
             UPDATE zmc_encounters
             SET clinical_status = 'Pending Consultation', payment_status = 'Paid'
             WHERE id = $1
           `, [qItem.encounter_id]);
 
           // Queue to Doctor Consultation!
-          await query(`
+          await q(`
             INSERT INTO zmc_patient_queue (id, encounter_id, patient_id, queue_type, priority, status, arrival_time)
             VALUES ($1, $2, $3, 'Doctor Consultation', $4, 'Waiting', NOW())
           `, [generateUUID(), qItem.encounter_id, patientId, qItem.priority]);
 
           // Set patient status
-          await query("UPDATE zmc_patients SET status = 'Waiting for Doctor' WHERE id = $1", [patientId]);
+          await q("UPDATE zmc_patients SET status = 'Waiting for Doctor' WHERE id = $1", [patientId]);
         } else {
           // Fallback: If payment was processed via account lookup, move open encounter to Doctor Consultation queue
-          const openEncounter = await query(`
+          const openEncounter = await q(`
             SELECT id, priority FROM zmc_encounters
             WHERE patient_id = $1 AND (clinical_status = 'Open' OR clinical_status = 'Waiting for Consultation Payment' OR clinical_status = 'Triage Completed' OR clinical_status = 'Pending Registration')
             ORDER BY created_at DESC LIMIT 1
@@ -731,21 +898,21 @@ router.post(
           if (openEncounter.rows.length > 0) {
             const encId = openEncounter.rows[0].id;
             const prio = openEncounter.rows[0].priority || 'Routine';
-            await query(`
+            await q(`
               UPDATE zmc_encounters
               SET clinical_status = 'Pending Consultation', payment_status = 'Paid'
               WHERE id = $1
             `, [encId]);
-            await query(`
+            await q(`
               INSERT INTO zmc_patient_queue (id, encounter_id, patient_id, queue_type, priority, status, arrival_time)
               VALUES ($1, $2, $3, 'Doctor Consultation', $4, 'Waiting', NOW())
             `, [generateUUID(), encId, patientId, prio]);
-            await query("UPDATE zmc_patients SET status = 'Waiting for Doctor' WHERE id = $1", [patientId]);
+            await q("UPDATE zmc_patients SET status = 'Waiting for Doctor' WHERE id = $1", [patientId]);
           }
         }
 
         // 2. Check for active queue item of type 'Cashier Lab Payment'
-        const labQueueCheck = await query(`
+        const labQueueCheck = await q(`
           SELECT * FROM zmc_patient_queue
           WHERE patient_id = $1 AND (queue_type = 'Cashier Lab Payment' OR queue_type = 'Cashier Desk') AND (status = 'Waiting' OR status = 'Processing')
           LIMIT 1
@@ -754,25 +921,25 @@ router.post(
         if (labQueueCheck.rows.length > 0) {
           const qItem = labQueueCheck.rows[0];
           // Complete the cashier lab payment queue item
-          await query(`
+          await q(`
             UPDATE zmc_patient_queue
             SET status = 'Completed', processed_at = NOW(), processed_by = $1
             WHERE id = $2
           `, [req.user?.username || 'Cashier', qItem.id]);
 
           // Queue to Laboratory queue!
-          await query(`
+          await q(`
             INSERT INTO zmc_patient_queue (id, encounter_id, patient_id, queue_type, priority, status, arrival_time)
             VALUES ($1, $2, $3, 'Laboratory', $4, 'Waiting', NOW())
           `, [generateUUID(), qItem.encounter_id, patientId, qItem.priority || 'Routine']);
 
           // Record permanent lab payment entry in zmc_lab_payments database table
-          const patRes = await query('SELECT name, hospital_number, card_type FROM zmc_patients WHERE id = $1', [patientId]);
+          const patRes = await q('SELECT name, hospital_number, card_type FROM zmc_patients WHERE id = $1', [patientId]);
           const pat = patRes.rows[0] || {};
-          const invRes = invoiceId ? await query('SELECT description FROM zmc_invoices WHERE id = $1', [invoiceId]) : { rows: [] };
+          const invRes = invoiceId ? await q('SELECT description FROM zmc_invoices WHERE id = $1', [invoiceId]) : { rows: [] };
           const invDesc = invRes.rows[0]?.description || 'Laboratory Investigations Fee';
 
-          await query(`
+          await q(`
             INSERT INTO zmc_lab_payments (id, patient_id, patient_name, hospital_number, card_type, tests_summary, amount, payment_method, date_paid, collected_by, encounter_id, invoice_id)
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), $9, $10, $11)
           `, [
@@ -790,17 +957,17 @@ router.post(
           ]);
 
           // Set patient status
-          await query("UPDATE zmc_patients SET status = 'Waiting for Laboratory' WHERE id = $1", [patientId]);
-          await query("UPDATE zmc_encounters SET clinical_status = 'Waiting for Laboratory' WHERE id = $1", [qItem.encounter_id]);
+          await q("UPDATE zmc_patients SET status = 'Waiting for Laboratory' WHERE id = $1", [patientId]);
+          await q("UPDATE zmc_encounters SET clinical_status = 'Waiting for Laboratory' WHERE id = $1", [qItem.encounter_id]);
 
-          // Broadcast to Laboratory Scientist
-          broadcastNotification({
+          // Collected for post-commit flush (see withBillingTransaction contract).
+          pendingNotifications.push({
             type: 'PATIENT_ROUTED_TO_LAB',
             targetRole: 'Laboratory Scientist',
             message: `Payment confirmed for ${pat.name || 'Outpatient'}! Patient routed to Laboratory under Regular Lab Queue.`,
             patientId
           });
-          broadcastNotification({
+          pendingNotifications.push({
             type: 'LAB_ORDER_CREATED',
             targetRole: 'Laboratory Scientist',
             message: `New lab tests paid for ${pat.name || 'Outpatient'}.`,
@@ -808,7 +975,7 @@ router.post(
           });
         } else {
           // Fallback: Check if patient has an encounter waiting for lab payment or a lab invoice
-          const openLabEnc = await query(`
+          const openLabEnc = await q(`
             SELECT e.id, e.priority FROM zmc_encounters e
             JOIN zmc_invoices i ON i.encounter_id = e.id
             WHERE e.patient_id = $1 AND (e.clinical_status = 'Waiting for Lab Payment' OR i.description ILIKE '%Laboratory%')
@@ -819,23 +986,23 @@ router.post(
             const encId = openLabEnc.rows[0].id;
             const prio = openLabEnc.rows[0].priority || 'Routine';
 
-            const existingLabQ = await query(`
+            const existingLabQ = await q(`
               SELECT id FROM zmc_patient_queue
               WHERE encounter_id = $1 AND queue_type = 'Laboratory' AND (status = 'Waiting' OR status = 'Processing')
             `, [encId]);
 
             if (existingLabQ.rows.length === 0) {
-              await query(`
+              await q(`
                 INSERT INTO zmc_patient_queue (id, encounter_id, patient_id, queue_type, priority, status, arrival_time)
                 VALUES ($1, $2, $3, 'Laboratory', $4, 'Waiting', NOW())
               `, [generateUUID(), encId, patientId, prio]);
 
-              await query("UPDATE zmc_patients SET status = 'Waiting for Laboratory' WHERE id = $1", [patientId]);
-              await query("UPDATE zmc_encounters SET clinical_status = 'Waiting for Laboratory' WHERE id = $1", [encId]);
+              await q("UPDATE zmc_patients SET status = 'Waiting for Laboratory' WHERE id = $1", [patientId]);
+              await q("UPDATE zmc_encounters SET clinical_status = 'Waiting for Laboratory' WHERE id = $1", [encId]);
 
-              const patRes = await query('SELECT name FROM zmc_patients WHERE id = $1', [patientId]);
+              const patRes = await q('SELECT name FROM zmc_patients WHERE id = $1', [patientId]);
               const patName = patRes.rows[0]?.name || 'Patient';
-              broadcastNotification({
+              pendingNotifications.push({
                 type: 'PATIENT_ROUTED_TO_LAB',
                 targetRole: 'Laboratory Scientist',
                 message: `Payment confirmed for ${patName}! Patient routed to Laboratory under Regular Lab Queue.`,
@@ -846,7 +1013,7 @@ router.post(
         }
 
         // 3. Check for active queue item of type 'Cashier Pharmacy Payment'
-        const pharmQueueCheck = await query(`
+        const pharmQueueCheck = await q(`
           SELECT * FROM zmc_patient_queue
           WHERE patient_id = $1 AND queue_type = 'Cashier Pharmacy Payment' AND status = 'Waiting'
           LIMIT 1
@@ -855,25 +1022,25 @@ router.post(
         if (pharmQueueCheck.rows.length > 0) {
           const qItem = pharmQueueCheck.rows[0];
           // Complete the cashier pharmacy payment queue item
-          await query(`
+          await q(`
             UPDATE zmc_patient_queue
             SET status = 'Completed', processed_at = NOW(), processed_by = $1
             WHERE id = $2
           `, [req.user?.username || 'Cashier', qItem.id]);
 
           // Queue to Pharmacy queue!
-          await query(`
+          await q(`
             INSERT INTO zmc_patient_queue (id, encounter_id, patient_id, queue_type, priority, status, arrival_time)
             VALUES ($1, $2, $3, 'Pharmacy', $4, 'Waiting', NOW())
           `, [generateUUID(), qItem.encounter_id, patientId, qItem.priority]);
 
           // Set patient status
-          await query("UPDATE zmc_patients SET status = 'Waiting for Pharmacy' WHERE id = $1", [patientId]);
-          await query("UPDATE zmc_encounters SET clinical_status = 'Waiting for Pharmacy' WHERE id = $1", [qItem.encounter_id]);
+          await q("UPDATE zmc_patients SET status = 'Waiting for Pharmacy' WHERE id = $1", [patientId]);
+          await q("UPDATE zmc_encounters SET clinical_status = 'Waiting for Pharmacy' WHERE id = $1", [qItem.encounter_id]);
         }
 
         // Cleanup any remaining waiting Cashier/Billing queue items for this patient or encounter
-        await query(`
+        await q(`
           UPDATE zmc_patient_queue
           SET status = 'Completed', processed_at = NOW(), processed_by = $1
           WHERE (patient_id = $2 OR (encounter_id IS NOT NULL AND encounter_id = $3))
@@ -881,29 +1048,59 @@ router.post(
             AND (status = 'Waiting' OR status = 'Processing')
         `, [req.user?.username || 'Cashier', patientId, validEncounterId]);
 
-        broadcastNotification({
+        pendingNotifications.push({
           type: 'PATIENT_PAYMENT_COMPLETED',
           message: `Payment confirmed and collected for patient. Removed from billing queue.`,
           patientId
         });
-        broadcastNotification({
+        pendingNotifications.push({
           type: 'BILLING_QUEUE_UPDATED',
           message: `Billing queue updated.`,
           patientId
         });
       }
+      }); // end withBillingTransaction (POST /)
+
+      if (!created) {
+        throw new Error('Payment record was not created');
+      }
+
+      // Idempotent replay: same key already committed within 5 min — return the
+      // existing row with 200. No duplicate side effects were committed, so skip
+      // broadcasts and the billing audit.
+      if ((created as any).__deduplicated) {
+        const { __deduplicated, ...row } = created;
+        return res.status(200).json({
+          success: true,
+          deduplicated: true,
+          data: {
+            id: row.id,
+            patientId: row.patient_id,
+            invoiceId: row.invoice_id,
+            amount: parseFloat(row.amount),
+            status: row.status,
+            datePaid: row.date_paid,
+            paymentMethod: row.payment_method,
+            collectedBy: row.collected_by
+          }
+        });
+      }
+
+      for (const n of pendingNotifications) broadcastNotification(n);
+
+      await logBillingAudit(req, 'PAYMENT_RECORDED', patientId, amount);
 
       res.status(201).json({
         success: true,
         data: {
-          id: result.rows[0].id,
-          patientId: result.rows[0].patient_id,
-          invoiceId: result.rows[0].invoice_id,
-          amount: parseFloat(result.rows[0].amount),
-          status: result.rows[0].status,
-          datePaid: result.rows[0].date_paid,
-          paymentMethod: result.rows[0].payment_method,
-          collectedBy: result.rows[0].collected_by
+          id: created.id,
+          patientId: created.patient_id,
+          invoiceId: created.invoice_id,
+          amount: parseFloat(created.amount),
+          status: created.status,
+          datePaid: created.date_paid,
+          paymentMethod: created.payment_method,
+          collectedBy: created.collected_by
         }
       });
     } catch (err: any) {
@@ -913,7 +1110,10 @@ router.post(
 );
 
 // Independent Revenue Verification & Audit Reconciliation endpoint
-router.get('/revenue-verification', async (req, res) => {
+// Contract: GET /api/payments/revenue-verification | Auth: Cashier-family + admin bypass
+// Response: {success, data:{verified, totalRevenue, totalTransactions, paymentMethods, categories, transactions[]}}
+// Errors: 401 UNAUTHORIZED, 403 FORBIDDEN.
+router.get('/revenue-verification', authorizeRoles(['Cashier', 'Account Officer', 'Accountant', 'Administrator', 'Management', 'IT Administrator']) as any, async (req, res) => {
   try {
     // 1. Total completed revenue
     const revenueRes = await query("SELECT SUM(amount) as total, COUNT(*) as count FROM zmc_payments WHERE status = 'Completed'");
@@ -1001,8 +1201,10 @@ router.get('/revenue-verification', async (req, res) => {
   }
 });
 
-// Read payments - all authenticated staff
-router.get('/', async (req, res) => {
+// Read payments ledger - Cashier-family + admin bypass (was auth-only)
+// Contract: GET /api/payments/ | Auth: FINANCIAL_READ_ROLES
+// Response: {success, data:[{id,patientId,patientName,hospitalNumber,invoiceId,amount,status,datePaid,paymentMethod,collectedBy}]}
+router.get('/', authorizeRoles(['Cashier', 'Account Officer', 'Accountant', 'Administrator', 'Management', 'IT Administrator']) as any, async (req, res) => {
   try {
     const result = await query(`
       SELECT pay.*, p.name as patient_name, p.hospital_number
@@ -1057,6 +1259,8 @@ router.get(
 );
 
 // Record a new Daily Expense (PV)
+// Contract: POST /api/payments/vitae | Body: {personName*, description*, amount*, approvedByDoctor*} | Auth: Cashier/Admin/Mgmt
+// Response 201: {success, data:{id,personName,description,amount,approvedByDoctor,createdAt}} | Audit: VITAE_RECORDED.
 router.post(
   '/vitae',
   authorizeRoles(['Cashier', 'Administrator', 'Management']) as any,
@@ -1072,6 +1276,8 @@ router.post(
         VALUES ($1, $2, $3, $4, $5)
         RETURNING *
       `, [id, personName, description, amount, approvedByDoctor]);
+
+      await logBillingAudit(req, 'VITAE_RECORDED', personName, amount);
 
       res.status(201).json({
         success: true,
@@ -1126,6 +1332,8 @@ router.get(
 );
 
 // Record a new No Charge Patient Treatment
+// Contract: POST /api/payments/no-charge | Body: {staffName*, relationship*, patientId?, treatmentCost*, treatmentDescription*, approvedByDoctor*}
+// Response 201: {success, data:{...}} | Audit: NO_CHARGE_RECORDED.
 router.post(
   '/no-charge',
   authorizeRoles(['Cashier', 'Administrator', 'Management']) as any,
@@ -1173,6 +1381,8 @@ router.post(
         }
       }
 
+      await logBillingAudit(req, 'NO_CHARGE_RECORDED', patientId || staffName, treatmentCost);
+
       res.status(201).json({
         success: true,
         data: {
@@ -1193,6 +1403,7 @@ router.post(
 );
 
 // Get all permanent lab payment records from database
+// Verified: already role-gated (Cashier/Account Officer/Admin/IT/Mgmt + Lab family + Doctor) — kept as is per spec.
 router.get(
   '/lab-history',
   authorizeRoles(['Cashier', 'Account Officer', 'Administrator', 'IT Administrator', 'Management', 'Laboratory', 'Laboratory Scientist', 'Lab Technician', 'Scientist']) as any,
@@ -1214,8 +1425,11 @@ router.get(
 );
 
 // Get all active outstanding balance records across hospital
+// Contract: GET /api/payments/outstanding | Auth: FINANCIAL_READ_ROLES
+// Response: {success, data: rows[]} | Errors: 401/403.
 router.get(
   '/outstanding',
+  authorizeRoles(['Cashier', 'Account Officer', 'Accountant', 'Administrator', 'Management', 'IT Administrator']) as any,
   async (req: any, res: any) => {
     try {
       const result = await query(`
@@ -1267,8 +1481,11 @@ router.get(
 );
 
 // Get outstanding balance for a specific patient
+// Contract: GET /api/payments/outstanding/patient/:patientId | Auth: FINANCIAL_READ_ROLES
+// Response: {success, data: rows[], totalOwing} | Errors: 401/403.
 router.get(
   '/outstanding/patient/:patientId',
+  authorizeRoles(['Cashier', 'Account Officer', 'Accountant', 'Administrator', 'Management', 'IT Administrator']) as any,
   async (req: any, res: any) => {
     try {
       const { patientId } = req.params;
@@ -1293,15 +1510,17 @@ router.get(
 );
 
 // Settle or clear an outstanding balance - Cashier Only
+// Contract: POST /api/payments/outstanding/settle | Body: {id*, patientId*, paymentAmount*>0 && <=balance, paymentMethod?}
+// Response: {success, message, remainingBalance, totalPatientBalance} | Errors: 400 id/patientId/paymentAmount invalid or exceeds balance, 404 not found.
+// Audit: OUTSTANDING_SETTLED.
+// Txn: outstanding update + payment insert + patient rollup atomic via withBillingTransaction.
 router.post(
   '/outstanding/settle',
   authorizeRoles(['Cashier', 'Administrator', 'Management']) as any,
+  validateSettle as any,
   async (req: any, res: any) => {
     try {
       const { id, patientId, paymentAmount, paymentMethod } = req.body;
-      if (!id || !patientId || !paymentAmount) {
-        return res.status(400).json({ success: false, error: 'id, patientId and paymentAmount are required' });
-      }
 
       const checkOb = await query('SELECT * FROM zmc_outstanding_balances WHERE id = $1', [id]);
       if (checkOb.rows.length === 0) {
@@ -1311,20 +1530,31 @@ router.post(
       const record = checkOb.rows[0];
       const currentBalance = parseFloat(record.balance);
       const paid = parseFloat(paymentAmount);
+      if (!Number.isFinite(paid) || paid <= 0) {
+        return res.status(400).json({ success: false, error: 'paymentAmount must be a number > 0' });
+      }
+      if (paid > currentBalance) {
+        return res.status(400).json({ success: false, error: 'paymentAmount must not exceed outstanding balance' });
+      }
       const newAmountPaid = parseFloat(record.amount_paid) + paid;
       const newBalance = Math.max(0, currentBalance - paid);
       const cashierName = req.user?.username || 'Cashier';
 
       const { validEncounterId, validInvoiceId } = await sanitizeEncounterAndInvoice(record.encounter_id, record.invoice_id);
 
+      // Phase 2: outstanding + payment + patient-rollup writes run inside a Postgres
+      // transaction. The notification is flushed only after COMMIT, audit post-commit.
+      const pendingNotifications: any[] = [];
+      let remainingTotal = 0;
+      await withBillingTransaction(async (q) => {
       if (newBalance <= 0) {
-        await query(`
+        await q(`
           UPDATE zmc_outstanding_balances
           SET amount_paid = $1, balance = 0, status = 'Settled', cleared_by = $2, cleared_at = NOW(), updated_at = NOW()
           WHERE id = $3
         `, [newAmountPaid, cashierName, id]);
       } else {
-        await query(`
+        await q(`
           UPDATE zmc_outstanding_balances
           SET amount_paid = $1, balance = $2, updated_at = NOW()
           WHERE id = $3
@@ -1332,30 +1562,35 @@ router.post(
       }
 
       // Log payment record
-      await query(`
+      await q(`
         INSERT INTO zmc_payments (id, patient_id, encounter_id, invoice_id, amount, total_bill, balance, status, date_paid, payment_method, collected_by)
         VALUES ($1, $2, $3, $4, $5, $6, $7, 'Completed', NOW(), $8, $9)
       `, [generateUUID(), patientId, validEncounterId, validInvoiceId, paid, record.total_bill, newBalance, paymentMethod || 'Cash', cashierName]);
 
       // Recalculate patient outstanding balance
-      const sumRes = await query(`
+      const sumRes = await q(`
         SELECT COALESCE(SUM(balance), 0) as remaining_total
         FROM zmc_outstanding_balances
         WHERE patient_id = $1 AND status = 'Owing'
       `, [patientId]);
-      const remainingTotal = parseFloat(sumRes.rows[0].remaining_total || '0');
+      remainingTotal = parseFloat(sumRes.rows[0].remaining_total || '0');
 
-      await query('UPDATE zmc_patients SET outstanding_balance = $1 WHERE id = $2', [remainingTotal, patientId]);
+      await q('UPDATE zmc_patients SET outstanding_balance = $1 WHERE id = $2', [remainingTotal, patientId]);
 
-      // Broadcast notification
-      const patRes = await query('SELECT name FROM zmc_patients WHERE id = $1', [patientId]);
+      // Patient name for the post-commit notification.
+      const patRes = await q('SELECT name FROM zmc_patients WHERE id = $1', [patientId]);
       const patName = patRes.rows[0]?.name || 'Patient';
 
-      broadcastNotification({
+      pendingNotifications.push({
         type: 'OUTSTANDING_BALANCE_SETTLED',
         message: `Outstanding payment of N${paid.toLocaleString()} settled for ${patName} by Cashier. Remaining balance: N${remainingTotal.toLocaleString()}`,
         patientId
       });
+      }); // end withBillingTransaction (outstanding settle)
+
+      for (const n of pendingNotifications) broadcastNotification(n);
+
+      await logBillingAudit(req, 'OUTSTANDING_SETTLED', patientId, paid);
 
       res.json({
         success: true,
@@ -1371,15 +1606,18 @@ router.post(
 );
 
 // Record partial payment or register outstanding balance during checkout/registration
+// Contract: POST /api/payments/partial | Body: {patientId*, encounterId?, invoiceId?, totalBill*>0, amountPaid*>0 && <=totalBill, paymentMethod?, purpose?, idempotencyKey?|clientRef?}
+// Response: {success, message, balance} | Errors: 400 missing/invalid, overpay or NaN rejected; 404 patient not found.
+//   Idempotent replay (same key within 5 min): 200 {success, deduplicated:true, message, balance} — no duplicate insert.
+// Invoice status: balance>0 => 'Partially Paid' else 'Paid'. Audit: PARTIAL_PAYMENT (skipped on dedup replay).
+// Txn: payment + outstanding + invoice + queue + patient-rollup writes atomic via withBillingTransaction.
 router.post(
   '/partial',
   authorizeRoles(['Cashier', 'Receptionist', 'Records Officer', 'Administrator', 'Management']) as any,
+  validatePartial as any,
   async (req: any, res: any) => {
     try {
       const { patientId, encounterId, invoiceId, totalBill, amountPaid, paymentMethod, purpose } = req.body;
-      if (!patientId || totalBill === undefined || amountPaid === undefined) {
-        return res.status(400).json({ success: false, error: 'patientId, totalBill, and amountPaid are required' });
-      }
 
       // Verify patient exists
       const patRes = await query('SELECT name, hospital_number FROM zmc_patients WHERE id = $1', [patientId]);
@@ -1395,12 +1633,33 @@ router.post(
 
       const { validEncounterId, validInvoiceId } = await sanitizeEncounterAndInvoice(encounterId, invoiceId);
 
+      // Idempotency key (optional): body.idempotencyKey preferred, body.clientRef
+      // accepted as alias. See extractIdempotencyKey / contract comment above.
+      const idemKey = extractIdempotencyKey(req.body);
+
+      // Phase 2: the payment/outstanding/invoice/queue/rollup writes below run
+      // inside a Postgres transaction. Notifications are collected and flushed only
+      // after COMMIT; the billing audit is written post-commit as well.
+      const pendingNotifications: any[] = [];
+      let deduplicatedRow: any = null;
+      await withBillingTransaction(async (q) => {
+      // Idempotent replay within 5 min: reuse the existing row, skip duplicate insert.
+      if (idemKey) {
+        const existing = await findRecentIdempotentPayment(q, idemKey);
+        if (existing) {
+          deduplicatedRow = existing;
+          return;
+        }
+      }
+
       // Record payment entry
       const payId = generateUUID();
-      await query(`
-        INSERT INTO zmc_payments (id, patient_id, encounter_id, invoice_id, amount, total_bill, balance, status, date_paid, payment_method, collected_by)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, 'Completed', NOW(), $8, $9)
-      `, [payId, patientId, validEncounterId, validInvoiceId, paid, total, balance, paymentMethod || 'Cash', cashierName]);
+      await q(`
+        INSERT INTO zmc_payments (id, patient_id, encounter_id, invoice_id, amount, total_bill, balance, status, date_paid, payment_method, collected_by, description, idempotency_key)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, 'Completed', NOW(), $8, $9, $10, $11)
+      `, [payId, patientId, validEncounterId, validInvoiceId, paid, total, balance, paymentMethod || 'Cash', cashierName,
+        idemKey ? `${idempotencyTag(idemKey)} Partial payment via POST /api/payments/partial.` : null,
+        idemKey || null]);
 
       // If balance > 0, log outstanding balance
       if (balance > 0) {
@@ -1411,30 +1670,30 @@ router.post(
           purpose?.toLowerCase().includes('emergency') ? 'Emergency Desk' : 'OPD Reception'
         );
 
-        await query(`
+        await q(`
           INSERT INTO zmc_outstanding_balances (id, patient_id, patient_name, hospital_number, encounter_id, invoice_id, purpose, department, total_bill, amount_paid, balance, status, created_at, updated_at)
           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'Owing', NOW(), NOW())
         `, [generateUUID(), patientId, pat.name || 'Outpatient', pat.hospital_number || '—', validEncounterId, validInvoiceId, purpose || 'Hospital Registration / Services', dept, total, paid, balance]);
 
         // Update patient overall outstanding balance
-        const sumRes = await query(`
+        const sumRes = await q(`
           SELECT COALESCE(SUM(balance), 0) as remaining_total
           FROM zmc_outstanding_balances
           WHERE patient_id = $1 AND status = 'Owing'
         `, [patientId]);
         const remainingTotal = parseFloat(sumRes.rows[0].remaining_total || '0');
 
-        await query('UPDATE zmc_patients SET outstanding_balance = $1 WHERE id = $2', [remainingTotal, patientId]);
+        await q('UPDATE zmc_patients SET outstanding_balance = $1 WHERE id = $2', [remainingTotal, patientId]);
       }
 
       if (balance <= 0) {
-        await query(`UPDATE zmc_invoices SET status = 'Paid' WHERE patient_id = $1 OR (id IS NOT NULL AND id = $2)`, [patientId, validInvoiceId]);
+        await q(`UPDATE zmc_invoices SET status = 'Paid' WHERE patient_id = $1 OR (id IS NOT NULL AND id = $2)`, [patientId, validInvoiceId]);
       } else {
-        await query(`UPDATE zmc_invoices SET status = 'Paid' WHERE patient_id = $1 OR (id IS NOT NULL AND id = $2)`, [patientId, validInvoiceId]);
+        await q(`UPDATE zmc_invoices SET status = 'Partially Paid' WHERE patient_id = $1 OR (id IS NOT NULL AND id = $2)`, [patientId, validInvoiceId]);
       }
 
       // Complete active Cashier/Billing queue items for this patient
-      await query(`
+      await q(`
         UPDATE zmc_patient_queue
         SET status = 'Completed', processed_at = NOW(), processed_by = $1
         WHERE (patient_id = $2 OR (encounter_id IS NOT NULL AND encounter_id = $3))
@@ -1442,16 +1701,36 @@ router.post(
           AND (status = 'Waiting' OR status = 'Processing')
       `, [cashierName, patientId, validEncounterId]);
 
-      broadcastNotification({
+      pendingNotifications.push({
         type: 'PATIENT_PAYMENT_COMPLETED',
         message: `Payment collected for patient. Removed from billing queue.`,
         patientId
       });
-      broadcastNotification({
+      pendingNotifications.push({
         type: 'BILLING_QUEUE_UPDATED',
         message: `Billing queue updated.`,
         patientId
       });
+      }); // end withBillingTransaction (POST /partial)
+
+      // Idempotent replay: same key already committed within 5 min — return the
+      // existing row with 200. No duplicate side effects were committed, so skip
+      // broadcasts and the billing audit.
+      if (deduplicatedRow) {
+        const dedupBalance = deduplicatedRow.balance !== null && deduplicatedRow.balance !== undefined
+          ? parseFloat(deduplicatedRow.balance)
+          : balance;
+        return res.json({
+          success: true,
+          deduplicated: true,
+          message: dedupBalance > 0 ? `Duplicate suppressed: N${parseFloat(deduplicatedRow.amount).toLocaleString()} already recorded. N${dedupBalance.toLocaleString()} pending balance.` : 'Duplicate suppressed: payment already collected in full!',
+          balance: dedupBalance
+        });
+      }
+
+      for (const n of pendingNotifications) broadcastNotification(n);
+
+      await logBillingAudit(req, 'PARTIAL_PAYMENT', patientId, paid);
 
       res.json({
         success: true,
@@ -1466,9 +1745,13 @@ router.post(
 );
 
 // Submit a discount request (Cashier or Receptionist) -> Requires HR Approval
+// Contract: POST /api/payments/discount-request | Body: {patientId*, patientName*, hospitalNumber?, invoiceId?, encounterId?, originalAmount*>0, discountType* Percentage|Fixed, discountValue* (Pct 0-100 | Fixed 0<=v<=original), reason*}
+// Response: {success, message, discountRequestId, calculatedDiscount, finalAmount} | Errors: 400 missing/bounds.
+// Audit: DISCOUNT_REQUESTED with patientId + originalAmount.
 router.post(
   '/discount-request',
   authorizeRoles(['Cashier', 'Receptionist', 'Records Officer', 'Administrator', 'Management', 'Doctor', 'Nurse']) as any,
+  validateDiscountRequest as any,
   async (req: any, res: any) => {
     try {
       const {
@@ -1528,6 +1811,8 @@ router.post(
         patientId
       });
 
+      await logBillingAudit(req, 'DISCOUNT_REQUESTED', patientId, origAmt);
+
       res.json({
         success: true,
         message: 'Discount request submitted successfully! HR approval is now required.',
@@ -1542,9 +1827,12 @@ router.post(
   }
 );
 
-// Get discount requests (all authenticated roles)
+// Get discount requests (was auth-only; now Cashier-family + admin bypass)
+// Contract: GET /api/payments/discount-requests | Auth: FINANCIAL_READ_ROLES
+// Response: {success, discountRequests: rows[]} | Errors: 401/403.
 router.get(
   '/discount-requests',
+  authorizeRoles(['Cashier', 'Account Officer', 'Accountant', 'Administrator', 'Management', 'IT Administrator']) as any,
   async (req: any, res: any) => {
     try {
       const result = await query(`
@@ -1562,10 +1850,14 @@ router.get(
   }
 );
 
-// HR / Admin Approve Discount Request
+// HR / Admin Approve Discount Request (Cashier removed — separation of duties)
+// Contract: POST /api/payments/discount-requests/:id/approve | Params: {id} | Auth: DISCOUNT_DECISION_ROLES
+// Response: {success, message, finalAmount} | Errors: 400 bounds/status, 403 self-approve, 404 not found.
+// Bounds re-validated on approve: Percentage 0-100, Fixed 0<=v<=original. Audit: DISCOUNT_APPROVED.
 router.post(
   '/discount-requests/:id/approve',
-  authorizeRoles(['Human Resources', 'Administrator', 'Management', 'Human Resource Manager', 'Cashier']) as any,
+  authorizeRoles(['Human Resources', 'HR Manager', 'Human Resource Manager', 'Administrator', 'Management', 'IT Administrator']) as any,
+  validateDiscountDecision as any,
   async (req: any, res: any) => {
     try {
       const { id } = req.params;
@@ -1577,6 +1869,23 @@ router.post(
       }
 
       const discReq = check.rows[0];
+      if (discReq.status !== 'Pending') {
+        return res.status(400).json({ success: false, error: 'Discount request has already been decided' });
+      }
+      if (req.user?.username === discReq.requested_by || req.user?.id === discReq.requested_by || req.user?.name === discReq.requested_by) {
+        return res.status(403).json({ success: false, error: 'Self-approval is forbidden: requester cannot approve own discount' });
+      }
+      const dOrig = parseFloat(discReq.original_amount);
+      const dVal = parseFloat(discReq.discount_value);
+      if (discReq.discount_type === 'Percentage') {
+        if (!Number.isFinite(dVal) || dVal < 0 || dVal > 100) {
+          return res.status(400).json({ success: false, error: 'Percentage discountValue must be between 0 and 100' });
+        }
+      } else {
+        if (!Number.isFinite(dVal) || dVal < 0 || dVal > dOrig) {
+          return res.status(400).json({ success: false, error: 'Fixed discountValue must satisfy 0 <= value <= originalAmount' });
+        }
+      }
       await query(`
         UPDATE zmc_discount_requests
         SET status = 'Approved', approved_by = $1, approved_at = NOW()
@@ -1600,6 +1909,8 @@ router.post(
         patientId: discReq.patient_id
       });
 
+      await logBillingAudit(req, 'DISCOUNT_APPROVED', discReq.patient_id, discReq.final_amount);
+
       res.json({
         success: true,
         message: `Discount request for ${discReq.patient_name} approved by HR!`,
@@ -1612,10 +1923,13 @@ router.post(
   }
 );
 
-// HR / Admin Reject Discount Request
+// HR / Admin Reject Discount Request (Cashier removed — separation of duties)
+// Contract: POST /api/payments/discount-requests/:id/reject | Params: {id} Body: {rejectionReason?} | Auth: DISCOUNT_DECISION_ROLES
+// Response: {success, message} | Errors: 400 already decided, 403 self-approve, 404 not found. Audit: DISCOUNT_REJECTED.
 router.post(
   '/discount-requests/:id/reject',
-  authorizeRoles(['Human Resources', 'Administrator', 'Management', 'Human Resource Manager', 'Cashier']) as any,
+  authorizeRoles(['Human Resources', 'HR Manager', 'Human Resource Manager', 'Administrator', 'Management', 'IT Administrator']) as any,
+  validateDiscountDecision as any,
   async (req: any, res: any) => {
     try {
       const { id } = req.params;
@@ -1628,6 +1942,12 @@ router.post(
       }
 
       const discReq = check.rows[0];
+      if (discReq.status !== 'Pending') {
+        return res.status(400).json({ success: false, error: 'Discount request has already been decided' });
+      }
+      if (req.user?.username === discReq.requested_by || req.user?.id === discReq.requested_by || req.user?.name === discReq.requested_by) {
+        return res.status(403).json({ success: false, error: 'Self-rejection is forbidden: requester cannot decide own discount' });
+      }
       await query(`
         UPDATE zmc_discount_requests
         SET status = 'Rejected', approved_by = $1, approved_at = NOW(), rejection_reason = $2
@@ -1641,6 +1961,8 @@ router.post(
         message: `Discount request rejected by HR for ${discReq.patient_name}. Reason: ${rejectionReason || 'No reason specified'}.`,
         patientId: discReq.patient_id
       });
+
+      await logBillingAudit(req, 'DISCOUNT_REJECTED', discReq.patient_id, discReq.original_amount);
 
       res.json({
         success: true,

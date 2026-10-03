@@ -39,54 +39,55 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import DoctorSpecializedDirectory from './DoctorSpecializedDirectory';
+import { resolveMedPrice } from '../backend/catalogue/meds-catalogue';
 
 // Lab tests catalog matching exact user requests & pricing spec
-const CHEMISTRY_TESTS = [
-  { name: 'Liver Function Test (LFT)', price: 15000 },
-  { name: 'Electrolyte, Urea, Creatinine (E/U/C)', price: 15000 },
-  { name: 'Lipid Profile', price: 15000 },
-  { name: 'Prostate Specific Antigen (PSA)', price: 18000 },
-  { name: 'Cholesterol', price: 7000 },
-  { name: 'Random Blood Sugar (RBS)', price: 1500 },
-  { name: 'Fasting Blood Sugar (FBS)', price: 1500 },
-  { name: 'Full Blood Count (FBC)', price: 7000 },
-  { name: 'Hormonal Assay', price: 60000 },
-  { name: 'HbA1c (Glycated Sugar)', price: 7000 },
-  { name: 'Urine Analysis (UA)', price: 2500 },
-  { name: 'Faecal Occult Blood Test (FOB)', price: 3000 },
-  { name: 'Pregnancy Test – PT (HCG)', price: 2500 }
+export const CHEMISTRY_TESTS = [
+  { code: 'LFT_COMP', name: 'Liver Function Test (LFT)', price: 15000 },
+  { code: 'SEUC_COMP', name: 'Electrolyte, Urea, Creatinine (E/U/C)', price: 15000 },
+  { code: 'LIPID_PROFILE', name: 'Lipid Profile', price: 15000 },
+  { code: 'PSA', name: 'Prostate Specific Antigen (PSA)', price: 15000 },
+  { code: 'CHOLESTEROL', name: 'Cholesterol', price: 10000 },
+  { code: 'FBS_RBS', name: 'Random Blood Sugar (RBS)', price: 2000 },
+  { code: 'FBS_RBS', name: 'Fasting Blood Sugar (FBS)', price: 2000 },
+  { code: 'FBC', name: 'Full Blood Count (FBC)', price: 7000 },
+  { code: 'HORMONAL', name: 'Hormonal Assay', price: 90000 },
+  { code: 'HBA1C', name: 'HbA1c (Glycated Sugar)', price: 10500 },
+  { code: 'UA', name: 'Urine Analysis (UA)', price: 3000 },
+  { code: 'FOB', name: 'Faecal Occult Blood Test (FOB)', price: 3000 },
+  { code: 'PT_HCG', name: 'Pregnancy Test – PT (HCG)', price: 2500 }
 ];
 
-const SEROLOGY_TESTS = [
-  { name: 'Widal Test', price: 7000 },
-  { name: 'Hepatitis B (HBsAg)', price: 3500 },
-  { name: 'Hepatitis C (HCV)', price: 3500 },
-  { name: 'VDRL (Syphilis)', price: 3500 },
-  { name: 'Retroviral Screening (RVS)', price: 5000 }
+export const SEROLOGY_TESTS = [
+  { code: 'WIDAL', name: 'Widal Test', price: 5000 },
+  { code: 'HBSAG', name: 'Hepatitis B (HBsAg)', price: 3500 },
+  { code: 'HCV', name: 'Hepatitis C (HCV)', price: 3500 },
+  { code: 'VDRL', name: 'VDRL (Syphilis)', price: 3500 },
+  { code: 'RVS', name: 'Retroviral Screening (RVS)', price: 5000 }
 ];
 
-const HAEMATOLOGY_TESTS = [
-  { name: 'Blood Percentage (HB)', price: 1500 },
-  { name: 'Blood Group (BG)', price: 4000 },
-  { name: 'Genotype (GT)', price: 8000 }
+export const HAEMATOLOGY_TESTS = [
+  { code: 'HB', name: 'Blood Percentage (HB)', price: 3000 },
+  { code: 'BLOOD_GROUP_GENOTYPE', name: 'Blood Group (BG)', price: 3000 },
+  { code: 'GENOTYPE', name: 'Genotype (GT)', price: 10000 }
 ];
 
-const MICROBIOLOGY_TESTS = [
-  { name: 'EAR SWAB M/C/S', price: 7000 },
-  { name: 'HVS M/C/S', price: 7000 },
-  { name: 'Urine M/C/S', price: 7000 },
-  { name: 'Pus Swab M/C/S', price: 10000 },
-  { name: 'Semen Culture M/C/S', price: 15000 },
-  { name: 'Urethral Swab M/C/S', price: 7000 },
-  { name: 'Stool Culture M/C/S', price: 15000 },
-  { name: 'Sputum M/C/S', price: 10000 },
-  { name: 'H. pylori (HP)', price: 5000 }
+export const MICROBIOLOGY_TESTS = [
+  { code: 'EAR_SWAB_MCS', name: 'EAR SWAB M/C/S', price: 7000 },
+  { code: 'HVS_MCS', name: 'HVS M/C/S', price: 7000 },
+  { code: 'URINE_MCS', name: 'Urine M/C/S', price: 7000 },
+  { code: 'PUS_SWAB_MCS', name: 'Pus Swab M/C/S', price: 10000 },
+  { code: 'SEMEN_MCS', name: 'Semen Culture M/C/S', price: 15000 },
+  { code: 'URETHRAL_SWAB_MCS', name: 'Urethral Swab M/C/S', price: 7000 },
+  { code: 'STOOL_MCS', name: 'Stool Culture M/C/S', price: 15000 },
+  { code: 'SPUTUM_MCS', name: 'Sputum M/C/S', price: 10000 },
+  { code: 'HP_PYLORI', name: 'H. pylori (HP)', price: 5000 }
 ];
 
-const PARASITOLOGY_TESTS = [
-  { name: 'Stool Analysis', price: 5000 },
-  { name: 'Microfilaria (MF)', price: 5000 },
-  { name: 'Malaria Parasite (MP)', price: 3000 }
+export const PARASITOLOGY_TESTS = [
+  { code: 'STOOL_ANALYSIS', name: 'Stool Analysis', price: 5000 },
+  { code: 'MICROFILARIA', name: 'Microfilaria (MF)', price: 5000 },
+  { code: 'MP_STD', name: 'Malaria Parasite (MP)', price: 3000 }
 ];
 
 // Medications Catalog
@@ -1282,53 +1283,8 @@ export default function DoctorView({ activeSubTab, onNavigateTab }: DoctorViewPr
   };
 
   const getMedicationPrice = (medName: string): number => {
-    const priceMap: Record<string, number> = {
-      'Paracetamol 500mg tab': 800,
-      'Ibuprofen 400mg tab': 1200,
-      'Diclofenac 50mg tab': 1500,
-      'Artemether/Lumefantrine (Coartem)': 2800,
-      'Dihydroartemisinin/Piperaquine': 3200,
-      'Amoxicillin 500mg cap': 2500,
-      'Amoxicillin/Clavulanate (Augmentin) 625mg': 4800,
-      'Ciprofloxacin 500mg tab': 2200,
-      'Azithromycin 500mg tab': 3500,
-      'Metronidazole 400mg tab': 1000,
-      'Cefuroxime 500mg tab': 4500,
-      'Erythromycin 500mg tab': 2500,
-      'Ampiclox cap': 2200,
-      'Omeprazole 20mg cap': 2000,
-      'Antacid Suspension (Mist Mag)': 1500,
-      'Hyoscine Butylbromide (Buscopan)': 1800,
-      'Metoclopramide 10mg tab': 800,
-      'Oral Rehydration Salts (ORS)': 600,
-      'Loperamide 2mg cap': 1000,
-      'Cetirizine 10mg tab': 1200,
-      'Loratadine 10mg tab': 1500,
-      'Chlorpheniramine 4mg tab': 500,
-      'Hydrocortisone 100mg inj': 2500,
-      'Dexamethasone 4mg inj': 1800,
-      'Vitamin C 100mg tab': 500,
-      'Vitamin B-Complex tab': 800,
-      'Folic Acid 5mg tab': 600,
-      'Ferrous Sulphate 200mg tab': 800,
-      'Multivitamin syrup': 2000,
-      'Zinc Sulfate 20mg tab': 1000,
-      'Amlodipine 5mg tab': 2000,
-      'Lisinopril 5mg tab': 2500,
-      'Lisinopril 10mg tab': 3000,
-      'Metformin 500mg tab': 1800,
-      'Glibenclamide 5mg tab': 1500,
-      'Labetalol 100mg': 3500,
-      'Methyldopa 250mg': 3000,
-      'Ceftriaxone IV 1g': 4500,
-      'Magnesium Sulphate 50% inj': 3500,
-      'Artesunate IV 60mg': 4000,
-      'Hydralazine IV 20mg': 3500,
-      'Oxytocin 10 IU': 2500,
-      'Diclofenac IM 75mg': 1500,
-      'Promethazine IM 50mg': 1200
-    };
-    return priceMap[medName] || 1500;
+    const resolved = resolveMedPrice({ name: medName });
+    return resolved ? resolved.price : 0;
   };
 
   const handleSendMedsToCashierDb = async () => {
@@ -1504,20 +1460,20 @@ export default function DoctorView({ activeSubTab, onNavigateTab }: DoctorViewPr
   };
 
   // Order Lab Test for Outpatient
-  const handleOrderOutpatientLabTest = (category: string, testName: string, price: number) => {
+  const handleOrderOutpatientLabTest = (category: string, testName: string, testCode: string) => {
     if (!selectedOutpatientId || !testName) return;
     
     // Check if test is already ordered
     const currentOrders = selectedOutpatient?.orderedTests || [];
-    if (currentOrders.some((t: any) => t.name === testName)) {
+    if (currentOrders.some((t: any) => t.name === testName || (testCode && t.code === testCode))) {
       showToast('This lab test is already ordered', 'error');
       return;
     }
 
     const newTest = {
       category,
+      code: testCode,
       name: testName,
-      price,
       timestamp: new Date().toLocaleString()
     };
 
@@ -2954,7 +2910,7 @@ export default function DoctorView({ activeSubTab, onNavigateTab }: DoctorViewPr
                       <select
                         onChange={(e) => {
                           const test = CHEMISTRY_TESTS.find(t => t.name === e.target.value);
-                          if (test) handleOrderOutpatientLabTest('CHEMISTRY', test.name, test.price);
+                          if (test) handleOrderOutpatientLabTest('CHEMISTRY', test.name, test.code);
                           e.target.value = '';
                         }}
                         className="w-full bg-slate-50 border border-slate-200 text-xs p-2 rounded-xl text-slate-800 focus:outline-none"
@@ -2972,7 +2928,7 @@ export default function DoctorView({ activeSubTab, onNavigateTab }: DoctorViewPr
                       <select
                         onChange={(e) => {
                           const test = SEROLOGY_TESTS.find(t => t.name === e.target.value);
-                          if (test) handleOrderOutpatientLabTest('SEROLOGY', test.name, test.price);
+                          if (test) handleOrderOutpatientLabTest('SEROLOGY', test.name, test.code);
                           e.target.value = '';
                         }}
                         className="w-full bg-slate-50 border border-slate-200 text-xs p-2 rounded-xl text-slate-800 focus:outline-none"
@@ -2990,7 +2946,7 @@ export default function DoctorView({ activeSubTab, onNavigateTab }: DoctorViewPr
                       <select
                         onChange={(e) => {
                           const test = HAEMATOLOGY_TESTS.find(t => t.name === e.target.value);
-                          if (test) handleOrderOutpatientLabTest('HAEMATOLOGY', test.name, test.price);
+                          if (test) handleOrderOutpatientLabTest('HAEMATOLOGY', test.name, test.code);
                           e.target.value = '';
                         }}
                         className="w-full bg-slate-50 border border-slate-200 text-xs p-2 rounded-xl text-slate-800 focus:outline-none"
@@ -3008,7 +2964,7 @@ export default function DoctorView({ activeSubTab, onNavigateTab }: DoctorViewPr
                       <select
                         onChange={(e) => {
                           const test = MICROBIOLOGY_TESTS.find(t => t.name === e.target.value);
-                          if (test) handleOrderOutpatientLabTest('MICROBIOLOGY', test.name, test.price);
+                          if (test) handleOrderOutpatientLabTest('MICROBIOLOGY', test.name, test.code);
                           e.target.value = '';
                         }}
                         className="w-full bg-slate-50 border border-slate-200 text-xs p-2 rounded-xl text-slate-800 focus:outline-none"
@@ -3026,7 +2982,7 @@ export default function DoctorView({ activeSubTab, onNavigateTab }: DoctorViewPr
                       <select
                         onChange={(e) => {
                           const test = PARASITOLOGY_TESTS.find(t => t.name === e.target.value);
-                          if (test) handleOrderOutpatientLabTest('PARASITOLOGY', test.name, test.price);
+                          if (test) handleOrderOutpatientLabTest('PARASITOLOGY', test.name, test.code);
                           e.target.value = '';
                         }}
                         className="w-full bg-slate-50 border border-slate-200 text-xs p-2 rounded-xl text-slate-800 focus:outline-none"

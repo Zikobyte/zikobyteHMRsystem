@@ -2,7 +2,8 @@ import { User } from "@/types";
 
 export const ALL_NAVIGATION_IDS = [
   'dashboard', 'patients', 'records', 'consult', 'nursing', 'lab', 'pharmacy',
-  'pharmacy-stock', 'procurement', 'cashier', 'cashier-outstanding', 'cashier-pv',
+  'pharmacy-stock', 'procurement', 'cashier', 'cashier-billing', 'cashier-outstanding', 'cashier-pv',
+  'cashier-vitae',
   'cashier-no-charge', 'cashier-maternity-supplies', 'cashier-discounts', 'cashier-lab-payments',
   'cashier-walkin-verify', 'cashier-iclinic-registrations', 'overview',
   'doctors', 'standard-cards', 'specialized-care', 'lab-technicians', 'pharmacists', 'outstanding', 'discounts', 'lab-walkin',
@@ -21,7 +22,7 @@ const navigationByDepartment: Record<string, readonly NavigationId[]> = {
   nurse: ['admitted-patients', 'detained-patients', 'nurse-dispensing', 'injection-records', 'dashboard', 'patients'],
   laboratory: ['lab', 'lab-walkin'],
   pharmacy: ['pharmacy', 'pharmacy-stock', 'procurement'],
-  cashier: ['cashier', 'cashier-lab-payments', 'cashier-iclinic-registrations', 'cashier-walkin-verify', 'cashier-outstanding', 'cashier-pv', 'cashier-no-charge', 'cashier-maternity-supplies', 'cashier-discounts'],
+  cashier: ['cashier', 'cashier-billing', 'cashier-lab-payments', 'cashier-iclinic-registrations', 'cashier-walkin-verify', 'cashier-outstanding', 'cashier-pv', 'cashier-vitae', 'cashier-no-charge', 'cashier-maternity-supplies', 'cashier-discounts', 'outstanding', 'discounts'],
   finance: ['overview', 'doctors', 'lab-technicians', 'pharmacists', 'procurement', 'outstanding', 'discounts'],
   eye: ['registered-patients', 'consultation', 'all-records', 'dashboard'],
   hr: ['hr-dashboard', 'hr-employees', 'hr-absences', 'hr-recruitment', 'hr-procurement', 'hr-discounts', 'dashboard'],
@@ -76,7 +77,7 @@ export function isNavigationAllowed(user: User, navigationId: string): boolean {
     'cashier-lab-payments': 'cashier',
     'cashier-walkin-verify': 'cashier',
     'iclinic-registrations': 'cashier-iclinic-registrations',
-    'cashier-vitae': 'cashier-pv',
+    'cashier-pv': 'cashier-vitae',
     'pharmacy-procurement': 'procurement',
     'pharmacy-dispensing': 'pharmacy',
     'pharmacy-admitted': 'pharmacy',

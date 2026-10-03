@@ -26,7 +26,15 @@ export default function NotificationCenter() {
       if (
         msg.type === 'PATIENT_REGISTERED' ||
         msg.type === 'VITALS_RECORDED' ||
-        msg.type === 'PATIENT_UPDATED'
+        msg.type === 'PATIENT_UPDATED' ||
+        msg.type === 'PATIENT_PAYMENT_COMPLETED' ||
+        msg.type === 'BILLING_QUEUE_UPDATED' ||
+        msg.type === 'DEPARTMENTAL_CASH_COLLECTED' ||
+        msg.type === 'PAYMENT_HANDOVER_CONFIRMED' ||
+        msg.type === 'OUTSTANDING_BALANCE_SETTLED' ||
+        msg.type === 'DISCOUNT_REQUEST_SUBMITTED' ||
+        msg.type === 'DISCOUNT_APPROVED' ||
+        msg.type === 'DISCOUNT_REJECTED'
       ) {
         const newToast: Toast = {
           id: Math.random().toString(),
@@ -76,6 +84,17 @@ export default function NotificationCenter() {
         return <Zap className="h-5 w-5 text-amber-400" />;
       case 'VITALS_RECORDED':
         return <Info className="h-5 w-5 text-emerald-400" />;
+      case 'PATIENT_PAYMENT_COMPLETED':
+      case 'PAYMENT_HANDOVER_CONFIRMED':
+      case 'OUTSTANDING_BALANCE_SETTLED':
+      case 'DISCOUNT_APPROVED':
+        return <Zap className="h-5 w-5 text-emerald-400" />;
+      case 'DEPARTMENTAL_CASH_COLLECTED':
+      case 'BILLING_QUEUE_UPDATED':
+      case 'DISCOUNT_REQUEST_SUBMITTED':
+        return <Info className="h-5 w-5 text-sky-400" />;
+      case 'DISCOUNT_REJECTED':
+        return <AlertCircle className="h-5 w-5 text-rose-400" />;
       default:
         return <AlertCircle className="h-5 w-5 text-blue-400" />;
     }
