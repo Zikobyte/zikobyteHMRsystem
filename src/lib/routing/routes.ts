@@ -88,6 +88,7 @@ export const ROUTE_ENTRIES: RouteEntry[] = [
   { tab: 'cashier-maternity-supplies', path: '/cashier/maternity-supplies', departments: ['cashier', 'finance', 'all'], component: CashierView, fallbackTab: 'cashier' },
   { tab: 'cashier-discounts', path: '/cashier/discounts', departments: ['cashier', 'finance', 'all'], component: CashierView, fallbackTab: 'cashier' },
   { tab: 'cashier-outstanding', path: '/cashier/outstanding', departments: ['cashier', 'finance', 'all'], component: CashierView, fallbackTab: 'cashier' },
+  { tab: 'cashier-procurement-queue', path: '/cashier/procurement-queue', departments: ['cashier', 'finance', 'all'], component: CashierView, fallbackTab: 'cashier' },
   { tab: 'consult', path: '/doctors', aliases: ['/consult'], departments: ['doctor', 'all'], component: DoctorView, fallbackTab: 'dashboard' },
   { tab: 'doctors', path: '/doctors', departments: ['doctor', 'finance', 'all'], component: DoctorView, fallbackTab: 'dashboard' },
   { tab: 'standard-cards', path: '/doctors/standard-cards', aliases: ['/standard-cards'], departments: ['opd', 'doctor', 'all'], component: DoctorView, fallbackTab: 'dashboard' },

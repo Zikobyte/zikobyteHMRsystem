@@ -108,6 +108,7 @@ export function resolveViewPlan(tab: string, user: User): ViewPlan | null {
   if (
     tab === 'cashier' ||
     tab.startsWith('cashier') ||
+    tab === 'cashier-procurement-queue' ||
     tab === 'outstanding' ||
     (tab === 'discounts' && !isHrUser(user))
   ) {

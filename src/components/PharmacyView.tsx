@@ -63,14 +63,14 @@ interface AdmittedOrder {
   admittedDate: string;
 }
 
-interface ProcurementFormRow {
+export interface ProcurementFormRow {
   id: string;
   name: string;
   quantity: string;
   unitPrice: string;
 }
 
-interface ProcurementRequestItem {
+export interface ProcurementRequestItem {
   name: string;
   quantity: number;
   unitPrice: number;
@@ -96,6 +96,64 @@ interface StockItem {
 interface PharmacyViewProps {
   activeTab?: string;
   onTabChange?: (tab: string) => void;
+}
+
+// Pure procurement helpers (exported for bun:test).
+// Payload shape mirrors POST /hr/procurements as sent by handleSubmitProcurement.
+export const EMPTY_PROCUREMENT_MESSAGE = 'Please fill in at least one medication item name.';
+
+export function buildProcurementItems(rows: ProcurementFormRow[]): ProcurementRequestItem[] {
+  const validItems: ProcurementRequestItem[] = [];
+  for (const row of rows) {
+    if (!row.name.trim()) continue;
+    const qty = parseInt(row.quantity) || 1;
+    const price = parseFloat(row.unitPrice) || 0;
+    validItems.push({
+      name: row.name.trim(),
+      quantity: qty,
+      unitPrice: price,
+      totalPrice: qty * price
+    });
+  }
+  return validItems;
+}
+
+export function getProcurementValidationError(validItems: ProcurementRequestItem[]): string | null {
+  if (validItems.length === 0) return EMPTY_PROCUREMENT_MESSAGE;
+  return null;
+}
+
+export function buildProcurementPayload(item: ProcurementRequestItem, requestedBy: string) {
+  return {
+    item_name: item.name,
+    quantity: item.quantity,
+    unit_price: item.unitPrice,
+    amount: item.totalPrice,
+    department: 'Pharmacy',
+    requested_by: requestedBy || 'Pharmacy Desk',
+    status: 'Pending',
+    category: 'Pharmacy Procurement'
+  };
+}
+
+export function partitionProcurementResults(
+  items: ProcurementRequestItem[],
+  results: PromiseSettledResult<unknown>[]
+): { succeeded: ProcurementRequestItem[]; failed: ProcurementRequestItem[]; errorMessage: string | null } {
+  const succeeded: ProcurementRequestItem[] = [];
+  const failed: ProcurementRequestItem[] = [];
+  items.forEach((item, idx) => {
+    const r = results[idx];
+    if (r && r.status === 'fulfilled') succeeded.push(item);
+    else failed.push(item);
+  });
+  if (failed.length === 0) return { succeeded, failed, errorMessage: null };
+  const names = failed.map(f => f.name).join(', ');
+  return {
+    succeeded,
+    failed,
+    errorMessage: `Procurement submission failed for ${failed.length} item(s): ${names}. No request was recorded — please retry.`
+  };
 }
 
 export default function PharmacyView({ activeTab: parentActiveTab, onTabChange }: PharmacyViewProps = {}) {
@@ -253,6 +311,7 @@ export default function PharmacyView({ activeTab: parentActiveTab, onTabChange }
     ];
   });
   const [procurementSuccess, setProcurementSuccess] = useState('');
+  const [procurementError, setProcurementError] = useState('');
 
   // State: Stock Log
   const [stockDrugName, setStockDrugName] = useState('');
@@ -437,23 +496,14 @@ export default function PharmacyView({ activeTab: parentActiveTab, onTabChange }
   const handleSubmitProcurement = async (e: React.FormEvent) => {
     e.preventDefault();
     setProcurementSuccess('');
+    setProcurementError('');
 
-    // Validate rows
-    const validItems: ProcurementRequestItem[] = [];
-    for (const row of procurementFormRows) {
-      if (!row.name.trim()) continue;
-      const qty = parseInt(row.quantity) || 1;
-      const price = parseFloat(row.unitPrice) || 0;
-      validItems.push({
-        name: row.name.trim(),
-        quantity: qty,
-        unitPrice: price,
-        totalPrice: qty * price
-      });
-    }
+    // Validate rows (pure helper; empty rows surface inline validation, not a card)
+    const validItems = buildProcurementItems(procurementFormRows);
 
-    if (validItems.length === 0) {
-      alert('Please fill in at least one medication item name.');
+    const validationError = getProcurementValidationError(validItems);
+    if (validationError) {
+      setProcurementError(validationError);
       return;
     }
 
@@ -468,21 +518,19 @@ export default function PharmacyView({ activeTab: parentActiveTab, onTabChange }
     const requestedBy = savedUser ? (JSON.parse(savedUser)?.name || JSON.parse(savedUser)?.username) : undefined;
 
     try {
-      await Promise.all(validItems.map(item => apiFetch('/hr/procurements', {
+      const results = await Promise.allSettled(validItems.map(item => apiFetch('/hr/procurements', {
         method: 'POST',
-        body: JSON.stringify({
-          item_name: item.name,
-          quantity: item.quantity,
-          unit_price: item.unitPrice,
-          amount: item.totalPrice,
-          department: 'Pharmacy',
-          requested_by: requestedBy || 'Pharmacy Desk',
-          status: 'Pending',
-          category: 'Pharmacy Procurement'
-        })
+        body: JSON.stringify(buildProcurementPayload(item, requestedBy || 'Pharmacy Desk'))
       })));
+      const { failed, errorMessage } = partitionProcurementResults(validItems, results);
+      if (failed.length > 0) {
+        setProcurementError(errorMessage ?? EMPTY_PROCUREMENT_MESSAGE);
+        return;
+      }
     } catch (err: any) {
-      console.error('Failed to submit procurement request to HR/Account Office:', err);
+      const names = validItems.map(item => item.name).join(', ');
+      setProcurementError(`Procurement submission failed for ${validItems.length} item(s): ${names}. No request was recorded — please retry.`);
+      return;
     }
 
     const newRequest: ProcurementRequest = {
@@ -495,7 +543,7 @@ export default function PharmacyView({ activeTab: parentActiveTab, onTabChange }
 
     setProcurementRequests(prev => [newRequest, ...prev]);
     setProcurementFormRows([{ id: Date.now().toString(), name: '', quantity: '', unitPrice: '' }]);
-    setProcurementSuccess(`Procurement request ${reqId} successfully submitted to Account Office & HR!`);
+    setProcurementSuccess(`Procurement request ${reqId} successfully submitted to HR procurement ledger!`);
     setTimeout(() => setProcurementSuccess(''), 5000);
   };
 
@@ -921,6 +969,16 @@ export default function PharmacyView({ activeTab: parentActiveTab, onTabChange }
             </div>
           )}
 
+          {procurementError && (
+            <div role="alert" className="bg-rose-50 border border-rose-200 p-4 rounded-2xl text-xs text-rose-800 font-medium flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <AlertCircle className="h-4 w-4 text-rose-600 shrink-0" />
+                <span>{procurementError}</span>
+              </div>
+              <button onClick={() => setProcurementError('')} className="text-rose-700 hover:text-rose-900 text-xs font-bold shrink-0">Dismiss</button>
+            </div>
+          )}
+
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
             
             {/* Left Column: Request Medication Procurement Form */}
@@ -928,7 +986,7 @@ export default function PharmacyView({ activeTab: parentActiveTab, onTabChange }
               <div>
                 <h2 className="text-base font-bold text-slate-800">Request Medication Procurement</h2>
                 <p className="text-xs text-slate-500 mt-1">
-                  Submit a medication request. It will be sent to the Account Office and HR for approval and fund release.
+                  Submit a medication request. It will be sent to the HR procurement ledger for approval and fund release.
                 </p>
               </div>
 
@@ -1021,7 +1079,7 @@ export default function PharmacyView({ activeTab: parentActiveTab, onTabChange }
                     className="w-full sm:w-auto px-6 py-2.5 bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs rounded-xl transition-all shadow-xs flex items-center justify-center gap-2 cursor-pointer"
                   >
                     <Send className="h-4 w-4" />
-                    Submit Request to Account Office & HR
+                    Submit Request to HR procurement ledger
                   </button>
                 </div>
               </form>

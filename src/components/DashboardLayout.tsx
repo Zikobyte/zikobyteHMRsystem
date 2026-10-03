@@ -602,6 +602,12 @@ export default function DashboardLayout({
           label: 'Discounts',
           icon: <Percent className="h-4.5 w-4.5" />,
           allowedRoles: ['Cashier', 'Accountant', 'Account Officer', 'Administrator', 'IT Administrator', 'Management'],
+        },
+        {
+          id: 'cashier-procurement-queue',
+          label: 'Procurement Queue',
+          icon: <ShoppingBag className="h-4.5 w-4.5" />,
+          allowedRoles: ['Cashier', 'Accountant', 'Account Officer', 'Administrator', 'IT Administrator', 'Management'],
         }
       ]
     }
