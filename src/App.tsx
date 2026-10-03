@@ -3,416 +3,153 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useEffect, useState } from "react";
-import { SessionProvider } from "./auth/session";
-import AppShell from "./components/AppShell";
-import CashierView from "./components/CashierView";
-import DashboardLayout from './components/DashboardLayout';
-import DashboardView from './components/DashboardView';
-import DoctorView from "./components/DoctorView";
-import EyeClinicView from "./components/EyeClinicView";
-import HRDashboardView from './components/HRDashboardView';
-import LaboratoryView from "./components/LaboratoryView";
-import LoginScreen from "./components/LoginScreen";
-import NotificationCenter from './components/NotificationCenter';
-import NursingView from "./components/NursingView";
-import OPDRegistrationView from "./components/OPDRegistrationView";
-import PatientDirectoryImportView from './components/PatientDirectoryImportView';
-import PharmacyView from "./components/PharmacyView";
-import UserManagementView from "./components/UserManagementView";
-import { isNavigationAllowed } from "./config/navigation";
-import { User } from "./types";
-import { isTokenExpired, socketManager } from './utils/api';
-
-const USE_NEW_SHELL = "true";
-
-const tabToPathMap: Record<string, string> = {
-  dashboard: '/dashboard',
-  overview: '/overview',
-  'hr-dashboard': '/hr/dashboard',
-  'hr-employees': '/hr/employees',
-  'hr-absences': '/hr/absences',
-  'hr-recruitment': '/hr/recruitment',
-  'hr-procurement': '/hr/procurement',
-  'hr-discounts': '/hr/discounts',
-  employees: '/hr/employees',
-  absences: '/hr/absences',
-  recruitment: '/hr/recruitment',
-  patients: '/opd',
-  'patients-reception': '/opd/reception',
-  'patients-returning': '/opd/returning',
-  'patients-admissions': '/opd/admissions',
-  nursing: '/nursing',
-  'admitted-patients': '/nursing/admitted',
-  'detained-patients': '/nursing/detained',
-  'nurse-dispensing': '/nursing/dispensing',
-  'injection-records': '/nursing/injections',
-  triage: '/nursing',
-  cashier: '/cashier',
-  consult: '/doctors',
-  doctors: '/doctors',
-  'standard-cards': '/doctors/standard-cards',
-  'specialized-care': '/doctors/specialized-care',
-  'doctor-admitted': '/doctors/admitted',
-  lab: '/lab',
-  'lab-walkin': '/lab/walkin',
-  'lab-technicians': '/lab',
-  pharmacy: '/pharmacy',
-  pharmacists: '/pharmacy',
-  procurement: '/procurement',
-  outstanding: '/outstanding',
-  discounts: '/discounts',
-  'eye-clinic': '/eyeclinic',
-  'registered-patients': '/eyeclinic/register',
-  'consultation': '/eyeclinic/consultation',
-  'all-records': '/eyeclinic/records',
-  records: '/records',
-  users: '/users',
-  maintenance: '/maintenance',
-  'activity-log': '/activity-log',
-  'patient-directory-import': '/it/patient-import',
-  it: '/it',
-  settings: '/settings',
-};
-
-const pathToTabMap: Record<string, string> = {
-	"/": "dashboard",
-	"/dashboard": "dashboard",
-	"/overview": "overview",
-	"/hr": "hr-dashboard",
-	"/hr/dashboard": "hr-dashboard",
-	"/hr/employees": "hr-employees",
-	"/hr/absences": "hr-absences",
-	"/hr/recruitment": "hr-recruitment",
-	"/hr/procurement": "hr-procurement",
-	"/hr/discounts": "hr-discounts",
-	"/employees": "hr-employees",
-	"/absences": "hr-absences",
-	"/recruitment": "hr-recruitment",
-	"/opd": "patients-reception",
-	"/opd/reception": "patients-reception",
-	"/opd/returning": "patients-returning",
-	"/opd/admissions": "patients-admissions",
-	"/nursing": "admitted-patients",
-	"/nursing/admitted": "admitted-patients",
-	"/nursing/detained": "detained-patients",
-	"/nursing/dispensing": "nurse-dispensing",
-	"/nursing/injections": "injection-records",
-	"/admitted-patients": "admitted-patients",
-	"/detained-patients": "detained-patients",
-	"/nurse-dispensing": "nurse-dispensing",
-	"/injection-records": "injection-records",
-	"/triage": "triage",
-	"/cashier": "cashier",
-	"/doctors": "doctors",
-	"/consult": "consult",
-	"/doctors/standard-cards": "standard-cards",
-	"/doctors/specialized-care": "specialized-care",
-	"/standard-cards": "standard-cards",
-	"/specialized-care": "specialized-care",
-	"/doctors/admitted": "doctor-admitted",
-	"/lab": "lab",
-	"/lab/walkin": "lab-walkin",
-	"/lab-technicians": "lab-technicians",
-	"/pharmacy": "pharmacy",
-	"/pharmacists": "pharmacists",
-	"/procurement": "procurement",
-	"/outstanding": "outstanding",
-	"/discounts": "discounts",
-	"/eyeclinic": "eye-clinic",
-	"/eye-clinic": "eye-clinic",
-	"/eyeclinic/register": "registered-patients",
-	"/eyeclinic/consultation": "consultation",
-	"/eyeclinic/records": "all-records",
-	"/registered-patients": "registered-patients",
-	"/consultation": "consultation",
-	"/all-records": "all-records",
-	"/records": "records",
-	"/users": "users",
-	"/it/users": "users",
-	"/maintenance": "maintenance",
-	"/it/maintenance": "maintenance",
-	"/activity-log": "activiity-log",
-	"/it/activity-log": "activity-log",
-	"/it/patient-import": "patient-directory-import",
-	"/it": "users",
-	"/settings": "settings",
-};
+import React, { Suspense, useState } from "react";
+import type { User } from "@/types";
+import DashboardLayout from "@/components/DashboardLayout";
+import DashboardView from "@/components/DashboardView";
+import OPDRegistrationView from "@/components/OPDRegistrationView";
+import EyeClinicView from "@/components/EyeClinicView";
+import DoctorView from "@/components/DoctorView";
+import UserManagementView from "@/components/UserManagementView";
+import CashierView from "@/components/CashierView";
+import LaboratoryView from "@/components/LaboratoryView";
+import PharmacyView from "@/components/PharmacyView";
+import HRDashboardView from "@/components/HRDashboardView";
+import NursingView from "@/components/NursingView";
+import NotificationCenter from "@/components/NotificationCenter";
+import PatientDirectoryImportView from "@/components/PatientDirectoryImportView";
+import LoginScreen from "@/components/LoginScreen";
+import { getAuthToken } from "@/utils/api";
+import { useSession } from "@/lib/routing/session";
+import { doctorSubTab, resolveViewPlan } from "@/lib/routing/view-plan";
+import { SessionProvider } from "./lib/routing/session";
 
 export default function App() {
-  if (USE_NEW_SHELL) {
+	return (
+		<SessionProvider>
+			<AppShell />
+		</SessionProvider>
+	);
+}
+
+function DeskFallback(): React.JSX.Element {
+	return (
+		<div className="flex items-center justify-center min-h-screen text-slate-500 text-sm">
+			Loading department desk…
+		</div>
+	);
+}
+
+function AppShell(): React.JSX.Element {
+	const { user, activeTab, navigate, login, logout } = useSession();
+	const [openPatientRegistration, setOpenPatientRegistration] =
+		useState(false);
+
+	if (!user) {
 		return (
-			<SessionProvider>
-				<AppShell />
-			</SessionProvider>
+			<>
+				<LoginScreen
+					onLoginSuccess={(loggedInUser: User) => {
+						const token = getAuthToken();
+						if (token) {
+							login(loggedInUser, token);
+						}
+					}}
+				/>
+				<NotificationCenter />
+			</>
 		);
-  }
-  const [user, setUser] = useState<User | null>(null);
+	}
 
-  // Initialize tab based on initial path
-  const getInitialTab = () => {
-    const path = window.location.pathname;
-    return pathToTabMap[path] || 'dashboard';
-  };
+	const openRegister = () => {
+		setOpenPatientRegistration(true);
+		navigate("patients");
+	};
+	const closeRegister = () => setOpenPatientRegistration(false);
+	const goReturning = () => navigate("patients-returning");
 
-  const [activeTab, setActiveTabState] = useState(getInitialTab);
-  const [openPatientRegistration, setOpenPatientRegistration] = useState(false);
+	const plan = resolveViewPlan(activeTab, user);
 
-  // Custom setter that updates both the tab state and browser URL path
-  const handleSetActiveTab = (tab: string) => {
-    if (user && !isNavigationAllowed(user, tab)) {
-      return;
-    }
-
-    setActiveTabState(tab);
-    const targetPath = tabToPathMap[tab];
-    if (targetPath && window.location.pathname !== targetPath) {
-      window.history.pushState(null, '', targetPath);
-    }
-  };
-
-  useEffect(() => {
-    // Check if user session already exists in localStorage
-    const savedUser = localStorage.getItem('zmc_user');
-    const token = localStorage.getItem('zmc_token');
-
-    if (savedUser && token) {
-      if (isTokenExpired(token)) {
-        localStorage.removeItem('zmc_user');
-        localStorage.removeItem('zmc_token');
-        setUser(null);
-      } else {
-        try {
-          setUser(JSON.parse(savedUser));
-        } catch (e) {
-          localStorage.removeItem('zmc_user');
-          localStorage.removeItem('zmc_token');
-        }
-      }
-    }
-
-    // Handle back/forward navigation in the browser
-    const handlePopState = () => {
-      const currentPath = window.location.pathname;
-      const matchedTab = pathToTabMap[currentPath] || 'dashboard';
-      setActiveTabState(matchedTab);
-    };
-
-    // Handle logout event triggered by expired tokens or API 401s
-    const handleLogoutEvent = () => {
-      handleLogout();
-    };
-
-    window.addEventListener('popstate', handlePopState);
-    window.addEventListener('zmc-logout', handleLogoutEvent);
-
-    return () => {
-      window.removeEventListener('popstate', handlePopState);
-      window.removeEventListener('zmc-logout', handleLogoutEvent);
-    };
-  }, []);
-
-  const getDefaultTabForUser = (u: User): string => {
-    if (u.role === 'Laboratory Scientist' || u.role === 'Lab Technician' || u.department === 'Laboratory') return 'lab';
-    if (u.role === 'Doctor') return u.department === 'Eye Clinic' ? 'registered-patients' : 'consult';
-    if (u.role === 'Cashier' || u.department === 'Cashier' || u.department === 'Finance') return 'cashier';
-    if (u.role === 'Pharmacist' || u.department === 'Pharmacy') return 'pharmacy';
-    if (u.role === 'Nurse' || u.department === 'Nursing') return 'admitted-patients';
-    if (u.role === 'OPD Clerk' || u.role === 'Receptionist' || u.role === 'Records Officer' || u.department === 'OPD') return 'dashboard';
-    if (u.role === 'Account Officer' || u.role === 'Accountant' || u.department === 'Accounts') return 'overview';
-    if (u.role === 'HR Manager' || u.role === 'Human Resources' || u.department === 'Human Resources' || u.department === 'HR') return 'hr-dashboard';
-    if (u.role === 'Eye Clinic' || u.department === 'Eye Clinic') return 'registered-patients';
-    if (u.role === 'IT Administrator' || u.department === 'IT' || u.username === 'admin') return 'users';
-    return 'dashboard';
-  };
-
-  useEffect(() => {
-    if (user && !isNavigationAllowed(user, activeTab)) {
-      handleSetActiveTab(getDefaultTabForUser(user));
-    }
-  }, [user, activeTab]);
-
-  const handleLoginSuccess = (loggedInUser: User) => {
-    setUser(loggedInUser);
-    localStorage.setItem('zmc_user', JSON.stringify(loggedInUser));
-
-    // Always navigate to the user's specific department desk on login
-    const defaultTab = getDefaultTabForUser(loggedInUser);
-    handleSetActiveTab(defaultTab);
-
-    socketManager.reconnect();
-  };
-
-  const handleLogout = () => {
-    setUser(null);
-    localStorage.removeItem('zmc_user');
-    localStorage.removeItem('zmc_token');
-    // Clear URL so previous department view does not linger for next login
-    window.history.pushState(null, '', '/');
-    setActiveTabState('dashboard');
-    socketManager.reconnect();
-  };
-
-  if (!user) {
-    return (
-      <>
-        <LoginScreen onLoginSuccess={handleLoginSuccess} />
-        <NotificationCenter />
-      </>
-    );
-  }
-
-  return (
+	return (
 		<>
 			<DashboardLayout
 				user={user}
-				onLogout={handleLogout}
+				onLogout={logout}
 				activeTab={activeTab}
-				setActiveTab={handleSetActiveTab}
+				setActiveTab={navigate}
 			>
-				{(activeTab === "dashboard" || activeTab === "overview") && (
-					<DashboardView
-						user={user}
-						onNavigateToPatients={() => {
-							if (user.role === "Doctor") {
-								handleSetActiveTab("consult");
-							} else {
-								handleSetActiveTab("patients");
+				<Suspense fallback={<DeskFallback />}>
+					{plan?.kind === "dashboard" && (
+						<DashboardView
+							user={user}
+							onNavigateToPatients={() => {
+								navigate(
+									user.role === "Doctor" ? "consult" : "patients",
+								);
+							}}
+							onNavigateToReturningPatients={goReturning}
+							onOpenRegisterPatient={openRegister}
+							onNavigateToStandardCards={() =>
+								navigate("standard-cards")
 							}
-						}}
-						onNavigateToReturningPatients={() => {
-							handleSetActiveTab("patients-returning");
-						}}
-						onOpenRegisterPatient={() => {
-							setOpenPatientRegistration(true);
-							handleSetActiveTab("patients");
-						}}
-						onNavigateToStandardCards={() => {
-							handleSetActiveTab("standard-cards");
-						}}
-						onNavigateToSpecializedCare={() => {
-							handleSetActiveTab("specialized-care");
-						}}
-					/>
-				)}
-				{(activeTab === "patients" || activeTab.startsWith("patients")) && (
-					<OPDRegistrationView
-						activeTab={activeTab}
-						initialOpenRegister={openPatientRegistration}
-						onRegisterModalClose={() => setOpenPatientRegistration(false)}
-					/>
-				)}
-				{(activeTab === "admitted-patients" ||
-					activeTab === "detained-patients" ||
-					activeTab === "nurse-dispensing" ||
-					activeTab === "injection-records" ||
-					activeTab === "nursing") && (
-					<NursingView
-						activeTab={activeTab}
-						onTabChange={handleSetActiveTab}
-						onOpenRegisterPatient={() => {
-							setOpenPatientRegistration(true);
-							handleSetActiveTab("patients");
-						}}
-						onNavigateToReturningPatients={() =>
-							handleSetActiveTab("patients-returning")
-						}
-					/>
-				)}
-				{activeTab === "triage" && (
-					<OPDRegistrationView activeTab={activeTab} />
-				)}
-				{(activeTab === "eye-clinic" ||
-					activeTab === "registered-patients" ||
-					activeTab === "consultation" ||
-					activeTab === "all-records") && (
-					<EyeClinicView
-						activeTab={activeTab}
-						onTabChange={handleSetActiveTab}
-					/>
-				)}
-				{(activeTab === "consult" ||
-					activeTab === "doctors" ||
-					activeTab === "standard-cards" ||
-					activeTab === "specialized-care" ||
-					activeTab === "doctor-admitted") && (
-					<DoctorView
-						activeSubTab={
-							activeTab === "standard-cards"
-								? "standard"
-								: activeTab === "specialized-care"
-									? "specialized"
-									: "outpatients"
-						}
-						onNavigateTab={handleSetActiveTab}
-					/>
-				)}
-				{(activeTab === "lab" ||
-					activeTab === "lab-technicians" ||
-					activeTab === "lab-walkin") && (
-					<LaboratoryView activeTab={activeTab} />
-				)}
-				{(activeTab === "pharmacy" ||
-					activeTab.startsWith("pharmacy") ||
-					activeTab === "pharmacists" ||
-					activeTab === "dispensing" ||
-					activeTab === "admitted" ||
-					activeTab === "stock") && (
-					<PharmacyView
-						activeTab={activeTab}
-						onTabChange={handleSetActiveTab}
-					/>
-				)}
-				{activeTab === "procurement" && (
-					<PharmacyView
-						activeTab="procurement"
-						onTabChange={handleSetActiveTab}
-					/>
-				)}
-				{activeTab === "records" && (
-					<OPDRegistrationView activeTab={activeTab} />
-				)}
-				{activeTab === "settings" && (
-					<OPDRegistrationView activeTab={activeTab} />
-				)}
-				{activeTab === "patient-directory-import" && (
-					<PatientDirectoryImportView currentUser={user} />
-				)}
-				{(activeTab === "users" ||
-					activeTab === "maintenance" ||
-					activeTab === "activity-log" ||
-					activeTab === "it") && (
-					<UserManagementView
-						activeSubTab={activeTab}
-						onTabChange={handleSetActiveTab}
-						currentUser={user}
-					/>
-				)}
-				{(activeTab.startsWith("hr-") ||
-					activeTab === "employees" ||
-					activeTab === "absences" ||
-					activeTab === "recruitment" ||
-					((user.role === "HR Manager" ||
-						user.department === "Human Resources" ||
-						user.department === "HR") &&
-						(activeTab === "procurement" ||
-							activeTab === "discounts"))) && (
-					<HRDashboardView
-						activeSubTab={activeTab}
-						onTabChange={handleSetActiveTab}
-						currentUser={user}
-					/>
-				)}
-				{(activeTab === "cashier" ||
-					activeTab.startsWith("cashier") ||
-					activeTab === "outstanding" ||
-					(activeTab === "discounts" &&
-						user.role !== "HR Manager" &&
-						user.department !== "Human Resources")) && (
-					<CashierView activeTab={activeTab} />
-				)}
+							onNavigateToSpecializedCare={() =>
+								navigate("specialized-care")
+							}
+						/>
+					)}
+					{plan?.kind === "opd" && (
+						<OPDRegistrationView
+							activeTab={activeTab}
+							initialOpenRegister={openPatientRegistration}
+							onRegisterModalClose={closeRegister}
+						/>
+					)}
+					{plan?.kind === "nursing" && (
+						<NursingView
+							activeTab={activeTab}
+							onTabChange={navigate}
+							onOpenRegisterPatient={openRegister}
+							onNavigateToReturningPatients={goReturning}
+						/>
+					)}
+					{plan?.kind === "eye" && (
+						<EyeClinicView activeTab={activeTab} onTabChange={navigate} />
+					)}
+					{plan?.kind === "doctor" && (
+						<DoctorView
+							activeSubTab={doctorSubTab(activeTab)}
+							onNavigateTab={navigate}
+						/>
+					)}
+					{plan?.kind === "lab" && (
+						<LaboratoryView activeTab={activeTab} />
+					)}
+					{plan?.kind === "pharmacy" && (
+						<PharmacyView activeTab={activeTab} onTabChange={navigate} />
+					)}
+					{plan?.kind === "patient-directory-import" && (
+						<PatientDirectoryImportView currentUser={user} />
+					)}
+					{plan?.kind === "admin" && (
+						<UserManagementView
+							activeSubTab={activeTab}
+							onTabChange={navigate}
+							currentUser={user}
+						/>
+					)}
+					{plan?.kind === "hr" && (
+						<HRDashboardView
+							activeSubTab={activeTab}
+							onTabChange={navigate}
+							currentUser={user}
+						/>
+					)}
+					{plan?.kind === "cashier" && (
+						<CashierView activeTab={activeTab} />
+					)}
+				</Suspense>
 			</DashboardLayout>
 			<NotificationCenter />
 		</>
-  );
+	);
 }

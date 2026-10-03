@@ -1,11 +1,11 @@
 import { describe, test, expect } from 'bun:test';
-import type { User } from '../../../src/types';
+import type { User } from '@/types';
 import {
   getAllowedTabs,
   isTabAllowed,
   getDefaultTab,
   resolveInitialTab,
-} from '../../../src/config/routes';
+} from '@/lib/routing/routes';
 
 const baseUser: User = {
   id: 'u-1',

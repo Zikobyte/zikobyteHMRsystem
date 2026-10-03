@@ -1,23 +1,23 @@
 import React, { useState, useEffect } from 'react';
 import { removeAuthToken, socketManager, apiFetch } from '../utils/api';
 import { User } from '../types';
-import { getAllowedNavigationIds } from '../config/navigation';
-import { 
-  Shield, 
-  LogOut, 
-  Users, 
-  HeartHandshake, 
-  Search, 
-  Bell, 
-  Settings, 
-  Maximize, 
-  LayoutDashboard, 
-  ChevronDown, 
-  Menu, 
-  UserCheck, 
-  BookOpen, 
-  Folder, 
-  Compass, 
+import { getAllowedNavigationIds } from "@/lib/routing/navigation";
+import {
+  Shield,
+  LogOut,
+  Users,
+  HeartHandshake,
+  Search,
+  Bell,
+  Settings,
+  Maximize,
+  LayoutDashboard,
+  ChevronDown,
+  Menu,
+  UserCheck,
+  BookOpen,
+  Folder,
+  Compass,
   HelpCircle,
   FileText,
   Activity,
@@ -287,8 +287,8 @@ export default function DashboardLayout({
     }
   ];
 
-  const isITStaff = 
-    (user.role as string) === 'IT Administrator' || 
+  const isITStaff =
+    (user.role as string) === 'IT Administrator' ||
     user.department === 'IT';
 
   const itDepartmentMenuGroups: MenuGroup[] = [
@@ -335,10 +335,10 @@ export default function DashboardLayout({
   ];
 
   const isEyeClinicStaff = (user.role as string) === 'Eye Clinic' || user.department === 'Eye Clinic';
-  const isAccountOfficerStaff = 
-    (user.role as string) === 'Account Officer' || 
+  const isAccountOfficerStaff =
+    (user.role as string) === 'Account Officer' ||
     (user.role as string) === 'Accountant' ||
-    user.department === 'Account Officer' || 
+    user.department === 'Account Officer' ||
     user.department === 'Accounts';
 
   const accountOfficerMenuGroups: MenuGroup[] = [
@@ -431,10 +431,10 @@ export default function DashboardLayout({
     }
   ];
 
-  const isHRStaff = 
-    (user.role as string) === 'HR Manager' || 
+  const isHRStaff =
+    (user.role as string) === 'HR Manager' ||
     (user.role as string) === 'Human Resources' ||
-    user.department === 'Human Resources' || 
+    user.department === 'Human Resources' ||
     user.department === 'HR';
 
   const hrMenuGroups: MenuGroup[] = [
@@ -492,8 +492,8 @@ export default function DashboardLayout({
     }
   ];
 
-  const isNurseStaff = 
-    (user.role as string) === 'Nurse' || 
+  const isNurseStaff =
+    (user.role as string) === 'Nurse' ||
     user.department === 'Nursing';
 
   const nurseMenuGroups: MenuGroup[] = [
@@ -539,10 +539,10 @@ export default function DashboardLayout({
     }
   ];
 
-  const isCashierStaff = 
-    (user.role as string) === 'Cashier' || 
+  const isCashierStaff =
+    (user.role as string) === 'Cashier' ||
     (user.role as string).toLowerCase().includes('cashier') ||
-    (user.department as string).toLowerCase().includes('cashier') || 
+    (user.department as string).toLowerCase().includes('cashier') ||
     user.department === 'Finance';
 
   const cashierMenuGroups: MenuGroup[] = [
@@ -607,10 +607,10 @@ export default function DashboardLayout({
     }
   ];
 
-  const isLabStaff = 
-    (user.role as string) === 'Laboratory Scientist' || 
-    (user.role as string) === 'Lab Technician' || 
-    (user.role as string) === 'Scientist' || 
+  const isLabStaff =
+    (user.role as string) === 'Laboratory Scientist' ||
+    (user.role as string) === 'Lab Technician' ||
+    (user.role as string) === 'Scientist' ||
     user.department === 'Laboratory';
 
   const labMenuGroups: MenuGroup[] = [
@@ -634,8 +634,8 @@ export default function DashboardLayout({
     }
   ];
 
-  const isPharmacyStaff = 
-    (user.role as string) === 'Pharmacist' || 
+  const isPharmacyStaff =
+    (user.role as string) === 'Pharmacist' ||
     user.department === 'Pharmacy';
 
   const pharmacyMenuGroups: MenuGroup[] = [
@@ -667,12 +667,12 @@ export default function DashboardLayout({
 
   const effectiveMenuGroups = isITStaff
     ? itDepartmentMenuGroups
-    : isEyeClinicStaff 
-      ? eyeClinicMenuGroups 
+    : isEyeClinicStaff
+      ? eyeClinicMenuGroups
       : isHRStaff
         ? hrMenuGroups
-        : isAccountOfficerStaff 
-          ? accountOfficerMenuGroups 
+        : isAccountOfficerStaff
+          ? accountOfficerMenuGroups
           : isNurseStaff
             ? nurseMenuGroups
             : isCashierStaff
@@ -691,9 +691,9 @@ export default function DashboardLayout({
 
   return (
     <div className="reference-shell min-h-screen bg-[#F4F6F8] flex font-sans text-slate-700">
-      
+
       {/* 1. LEFT SIDEBAR: Ultra-clean modern sidebar with smooth rounded active pills */}
-      <aside 
+      <aside
         className={`${
           sidebarOpen ? 'w-64' : 'w-20'
         } bg-[#181D27] text-slate-300 transition-all duration-300 ease-in-out shrink-0 flex flex-col justify-between border-r border-[#121620] relative z-30 select-none hidden md:flex h-screen sticky top-0 shadow-sm`}
@@ -774,7 +774,7 @@ export default function DashboardLayout({
                     </h4>
                   )}
                     {visibleItems.map((item) => {
-                      const isActive = activeTab === item.id || 
+                      const isActive = activeTab === item.id ||
                                       (item.id === 'overview' && (activeTab === 'overview' || activeTab === 'dashboard')) ||
                                       (item.id === 'dashboard' && (activeTab === 'overview' || activeTab === 'dashboard')) ||
                                       (item.id === 'doctors' && (activeTab === 'doctors' || activeTab === 'consult')) ||
@@ -802,9 +802,9 @@ export default function DashboardLayout({
                       ];
 
                       return (
-                        <div 
-                          key={item.id} 
-                          onMouseEnter={() => setIsOpdHovered(true)} 
+                        <div
+                          key={item.id}
+                          onMouseEnter={() => setIsOpdHovered(true)}
                           onMouseLeave={() => setIsOpdHovered(false)}
                           className="relative space-y-1"
                         >
@@ -916,9 +916,9 @@ export default function DashboardLayout({
                       ];
 
                       return (
-                        <div 
-                          key={item.id} 
-                          onMouseEnter={() => setIsCashierHovered(true)} 
+                        <div
+                          key={item.id}
+                          onMouseEnter={() => setIsCashierHovered(true)}
                           onMouseLeave={() => setIsCashierHovered(false)}
                           className="relative space-y-1"
                         >
@@ -1027,9 +1027,9 @@ export default function DashboardLayout({
                       ];
 
                       return (
-                        <div 
-                          key={item.id} 
-                          onMouseEnter={() => setIsPharmacyHovered(true)} 
+                        <div
+                          key={item.id}
+                          onMouseEnter={() => setIsPharmacyHovered(true)}
                           onMouseLeave={() => setIsPharmacyHovered(false)}
                           className="relative space-y-1"
                         >
@@ -1137,9 +1137,9 @@ export default function DashboardLayout({
                       ];
 
                       return (
-                        <div 
-                          key={item.id} 
-                          onMouseEnter={() => setIsEyeHovered(true)} 
+                        <div
+                          key={item.id}
+                          onMouseEnter={() => setIsEyeHovered(true)}
                           onMouseLeave={() => setIsEyeHovered(false)}
                           className="relative space-y-1"
                         >
@@ -1237,12 +1237,12 @@ export default function DashboardLayout({
                     }
 
                     if (item.id === 'nursing' || item.id === 'triage') {
-                      const isNurseActive = 
-                        activeTab === 'nursing' || 
+                      const isNurseActive =
+                        activeTab === 'nursing' ||
                         activeTab === 'triage' ||
-                        activeTab === 'admitted-patients' || 
-                        activeTab === 'detained-patients' || 
-                        activeTab === 'nurse-dispensing' || 
+                        activeTab === 'admitted-patients' ||
+                        activeTab === 'detained-patients' ||
+                        activeTab === 'nurse-dispensing' ||
                         activeTab === 'injection-records';
                       const isSubMenuVisible = isNurseHovered || nurseSubMenuOpen || isNurseActive;
 
@@ -1254,8 +1254,8 @@ export default function DashboardLayout({
                       ];
 
                       return (
-                        <div 
-                          key={item.id} 
+                        <div
+                          key={item.id}
                           className="relative"
                           onMouseEnter={() => setIsNurseHovered(true)}
                           onMouseLeave={() => setIsNurseHovered(false)}
@@ -1387,8 +1387,8 @@ export default function DashboardLayout({
           <button
             onClick={handleLogout}
             className={`w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-2xl text-xs font-extrabold transition-all cursor-pointer ${
-              sidebarOpen 
-                ? 'bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20' 
+              sidebarOpen
+                ? 'bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20'
                 : 'bg-rose-500/10 hover:bg-rose-500 text-rose-400 hover:text-white border border-rose-500/20'
             }`}
             title="Sign Out Session"
@@ -1407,12 +1407,12 @@ export default function DashboardLayout({
 
       {/* 2. MAIN WORKSPACE CONTAINER */}
       <div className="flex-grow flex flex-col min-w-0 min-h-screen">
-        
+
         {/* TOP BAR: Header search panel, icons & user profile matching references */}
         <header className="h-16 bg-white/90 backdrop-blur-md border-b border-slate-200/60 flex items-center justify-between px-6 shrink-0 relative z-20 shadow-2xs">
           {/* Left Area: Toggle Menu and Pill Search bar */}
           <div className="flex items-center gap-4 flex-1">
-            <button 
+            <button
               onClick={() => setSidebarOpen(!sidebarOpen)}
               className="p-2 hover:bg-slate-100/80 text-slate-600 rounded-xl transition-all cursor-pointer"
               title="Toggle Sidebar"
@@ -1435,13 +1435,13 @@ export default function DashboardLayout({
 
           {/* Right Area: Action tools and user status matching video precisely */}
           <div className="flex items-center gap-4 shrink-0">
-            
+
             {/* Notification bell & Dropdown (Commented out per user request) */}
             {/*
             <div className="relative">
-              <button 
+              <button
                 onClick={() => setNotificationsOpen(!notificationsOpen)}
-                className="p-2 hover:bg-slate-100/80 rounded-2xl text-slate-600 transition-all cursor-pointer relative" 
+                className="p-2 hover:bg-slate-100/80 rounded-2xl text-slate-600 transition-all cursor-pointer relative"
                 title="Hospital Broadcasts"
               >
                 <Bell className="h-4.5 w-4.5" />
@@ -1467,7 +1467,7 @@ export default function DashboardLayout({
                         <Bell className="h-4.5 w-4.5 text-[#A3D1E0]" /> In-App Notification Center
                       </span>
                       {unreadCount > 0 && (
-                        <button 
+                        <button
                           onClick={handleMarkAllRead}
                           className="text-[10px] text-[#A3D1E0] hover:text-[#82bdcf] font-bold hover:underline cursor-pointer bg-transparent border-none outline-none"
                         >
@@ -1507,8 +1507,8 @@ export default function DashboardLayout({
                           }
 
                           return (
-                            <div 
-                              key={notif.id} 
+                            <div
+                              key={notif.id}
                               onClick={() => handleNotificationClick(notif.id)}
                               className={`p-3.5 flex gap-3 hover:bg-slate-800/40 transition-all cursor-pointer relative text-left border-l-3 ${!notif.read ? 'border-l-[#A3D1E0] bg-slate-800/20' : 'border-l-transparent'}`}
                             >
@@ -1534,13 +1534,13 @@ export default function DashboardLayout({
 
                     {notifications.length > 0 && (
                       <div className="p-3 bg-slate-950/40 border-t border-slate-800 flex justify-between items-center">
-                        <button 
+                        <button
                           onClick={handleClearAll}
                           className="text-[10px] text-slate-400 hover:text-slate-300 font-semibold cursor-pointer bg-transparent border-none outline-none"
                         >
                           Clear All
                         </button>
-                        <button 
+                        <button
                           onClick={() => setNotificationsOpen(false)}
                           className="text-[10px] text-slate-300 hover:text-white font-bold px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700/50 transition-colors cursor-pointer"
                         >
@@ -1567,7 +1567,7 @@ export default function DashboardLayout({
                 </span>
               </div>
               <div className="h-8 w-px bg-slate-100 hidden sm:block"></div>
-              <button 
+              <button
                 onClick={handleLogout}
                 className="flex items-center gap-1.5 px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-100 rounded-lg text-xs font-bold transition-all cursor-pointer shadow-xs animate-fade-in"
                 title="Sign Out Session"
@@ -1589,7 +1589,7 @@ export default function DashboardLayout({
           Zikora Medical Centre Intranet HMS (Hospital Management System) • Phase 1 Core Deployment • Developer Console
         </footer>
       </div>
-      
+
     </div>
   );
 }

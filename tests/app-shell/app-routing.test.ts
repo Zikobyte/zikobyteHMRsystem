@@ -1,7 +1,7 @@
 import { describe, test, expect } from 'bun:test';
-import type { User } from '../../src/types';
-import { findRouteByPath } from '../../src/config/routes';
-import { createSessionController, memoryStorage } from '../../src/auth/session';
+import type { User } from '@/types';
+import { findRouteByPath } from '@/lib/routing/routes';
+import { createSessionController, memoryStorage } from '@/lib/routing/session';
 
 function makeToken(expInSeconds: number): string {
   const encode = (value: unknown) => Buffer.from(JSON.stringify(value)).toString('base64url');

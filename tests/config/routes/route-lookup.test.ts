@@ -4,7 +4,7 @@ import {
   findRouteByPath,
   normalizePathname,
   listRouteEntries,
-} from '../../../src/config/routes';
+} from '@/lib/routing/routes';
 
 describe('route registry lookup mirrors src/config/routes', () => {
   test('every entry resolves by tab; shared desks resolve to first canonical tab', () => {

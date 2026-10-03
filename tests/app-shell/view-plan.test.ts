@@ -1,6 +1,6 @@
 import { describe, test, expect } from 'bun:test';
-import type { User } from '../../src/types';
-import { doctorSubTab, resolveViewPlan } from '../../src/app-shell/view-plan';
+import type { User } from '@/types';
+import { doctorSubTab, resolveViewPlan } from '@/lib/routing/view-plan';
 
 const baseUser: User = {
   id: 'u-1',

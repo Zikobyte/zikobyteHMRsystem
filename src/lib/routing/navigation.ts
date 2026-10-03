@@ -1,4 +1,4 @@
-import { User } from '../types';
+import { User } from "@/types";
 
 export const ALL_NAVIGATION_IDS = [
   'dashboard', 'patients', 'records', 'consult', 'nursing', 'lab', 'pharmacy',
@@ -32,17 +32,31 @@ function getDepartmentKey(user: User): keyof typeof navigationByDepartment | 'al
   const role = user.role.trim().toLowerCase();
   const department = user.department.trim().toLowerCase();
 
-  if (role === 'administrator' || role === 'management') return 'all';
-  if (role === 'it administrator' || department === 'it') return 'it';
-  if (role.includes('cashier') || department.includes('cashier')) return 'cashier';
-  if (role === 'account officer' || role === 'accountant' || department === 'accounts' || department === 'finance') return 'finance';
-  if (role === 'hr manager' || role === 'human resources' || department === 'human resources' || department === 'hr') return 'hr';
-  if (role === 'eye clinic' || department === 'eye clinic') return 'eye';
-  if (role === 'laboratory scientist' || role === 'lab technician' || role === 'scientist' || department === 'laboratory') return 'laboratory';
-  if (role === 'pharmacist' || department === 'pharmacy') return 'pharmacy';
-  if (role === 'nurse' || department === 'nursing') return 'nurse';
-  if (role === 'doctor') return 'doctor';
-  if (role === 'receptionist' || role === 'records officer' || role === 'opd clerk' || department === 'opd') return 'opd';
+	if (role === 'administrator' || role === 'management')
+		return 'all';
+	if (role === 'it administrator' || department === 'it')
+		return 'it';
+	if (role.includes('cashier') || department.includes('cashier'))
+		return 'cashier';
+	if (role === 'account officer' || role === 'accountant' ||
+		department === 'accounts' || department === 'finance')
+		return 'finance';
+	if (role === 'hr manager' || role === 'human resources' ||
+		department === 'human resources' || department === 'hr')
+		return 'hr';
+	if (role === 'eye clinic' || department === 'eye clinic')
+		return 'eye';
+	if (role === 'laboratory scientist' || role === 'lab technician' ||
+		role === 'scientist' || department === 'laboratory')
+		return 'laboratory';
+	if (role === 'pharmacist' || department === 'pharmacy')
+		return 'pharmacy';
+	if (role === 'nurse' || department === 'nursing')
+		return 'nurse';
+	if (role === 'doctor')
+		return 'doctor';
+	if (role === 'receptionist' || role === 'records officer' || role === 'opd clerk' || department === 'opd')
+		return 'opd';
 
   return 'opd';
 }
