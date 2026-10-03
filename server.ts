@@ -22,6 +22,7 @@ import notificationsRoutes from './src/backend/routes/notifications/notification
 import { hrRoutes } from './src/backend/routes/hr/hr.routes';
 import nursingRoutes from './src/backend/routes/nursing/nursing.routes';
 import { JWT_SECRET } from './src/backend/config/env';
+import { authenticateJWT, authorizeRoles } from './src/backend/middleware/auth.middleware';
 
 const PORT = Number(process.env.PORT || 3000);
 
@@ -29,18 +30,21 @@ async function startServer() {
   const app = express();
   const server = http.createServer(app);
 
-  // 1. Standard Middlewares
-  app.use(cors());
-  app.use(express.json());
+  // 1. Standard Middlewares (hardened)
+  // Set CORS_ORIGIN in production (comma-separated allowlist, e.g. https://intranet.zikora.local).
+  // Falls back to reflecting request origin in dev. Requires credentials for JWT cookie/auth flows.
+  app.use(cors({ origin: process.env.CORS_ORIGIN?.split(',') || true, credentials: true }));
+  app.use(express.json({ limit: '1mb' }));
 
   // Health check endpoint for container orchestrators & dev server health monitors
   app.get('/api/health', (req, res) => {
     res.json({ status: 'ok', uptime: process.uptime(), timestamp: new Date().toISOString() });
   });
 
-  // Log requests
+  // Log requests (minimal — redacts ?token= query values so JWTs/secrets never hit logs)
   app.use((req, res, next) => {
-    console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
+    const safeUrl = req.url.replace(/([?&]token=)[^&]*/gi, '$1[REDACTED]');
+    console.log(`[${new Date().toISOString()}] ${req.method} ${safeUrl}`);
     next();
   });
 
@@ -56,7 +60,7 @@ async function startServer() {
   app.use('/api/nursing', nursingRoutes);
 
   // Audit Logs Routes
-  app.get('/api/audit-logs', async (req, res) => {
+  app.get('/api/audit-logs', authenticateJWT, authorizeRoles(['Administrator', 'IT Administrator', 'Management']), async (req, res) => {
     try {
       const poolInstance = getPostgresPool();
       if (poolInstance) {
@@ -72,9 +76,12 @@ async function startServer() {
     }
   });
 
-  app.post('/api/audit-logs', async (req, res) => {
+  app.post('/api/audit-logs', authenticateJWT, async (req, res) => {
     try {
       const { action, details, userId, userName, userRole, ipAddress } = req.body;
+      if (!action || !details) {
+        return res.status(400).json({ success: false, error: 'action and details are required' });
+      }
       const poolInstance = getPostgresPool();
       const id = `audit-${crypto.randomUUID ? crypto.randomUUID() : Date.now()}`;
       const now = new Date();
@@ -132,11 +139,11 @@ async function startServer() {
     }
   };
 
-  app.post('/api/audit-logs/clear', clearAuditLogsHandler);
-  app.delete('/api/audit-logs', clearAuditLogsHandler);
+  app.post('/api/audit-logs/clear', authenticateJWT, authorizeRoles(['IT Administrator', 'Administrator']), clearAuditLogsHandler);
+  app.delete('/api/audit-logs', authenticateJWT, authorizeRoles(['IT Administrator', 'Administrator']), clearAuditLogsHandler);
 
   // Maintenance Endpoints
-  app.post('/api/maintenance/cache-clear', async (req, res) => {
+  app.post('/api/maintenance/cache-clear', authenticateJWT, async (req, res) => {
     try {
       await refreshCache();
       res.json({ success: true, message: 'System cache purged and re-synchronized with PostgreSQL relational database store successfully.' });
@@ -145,7 +152,7 @@ async function startServer() {
     }
   });
 
-  app.post('/api/maintenance/clear-store', async (req, res) => {
+  app.post('/api/maintenance/clear-store', authenticateJWT, authorizeRoles(['IT Administrator', 'Administrator']), async (req, res) => {
     try {
       const { storeKey, storeName, actorName = 'IT Administrator', actorRole = 'IT Administrator' } = req.body;
       const poolInstance = getPostgresPool();
@@ -169,6 +176,9 @@ async function startServer() {
       };
 
       const tables = tableMap[storeKey];
+      if (!storeKey || !tables) {
+        return res.status(400).json({ success: false, error: 'Invalid or missing storeKey. Must be one of the whitelisted store keys.' });
+      }
       if (tables && poolInstance) {
         for (const tbl of tables) {
           try {
@@ -198,7 +208,7 @@ async function startServer() {
     }
   });
 
-  app.post('/api/maintenance/system-reset', async (req, res) => {
+  app.post('/api/maintenance/system-reset', authenticateJWT, authorizeRoles(['IT Administrator', 'Administrator']), async (req, res) => {
     try {
       const { actorName = 'IT Administrator', actorRole = 'IT Administrator' } = req.body;
       const poolInstance = getPostgresPool();
@@ -250,7 +260,7 @@ async function startServer() {
     }
   });
 
-  app.post('/api/maintenance/vacuum', async (req, res) => {
+  app.post('/api/maintenance/vacuum', authenticateJWT, async (req, res) => {
     try {
       const pool = getPostgresPool();
       if (pool) {
@@ -280,7 +290,8 @@ async function startServer() {
     }
   });
 
-  app.get('/api/maintenance/backup', async (req, res) => {
+  // WARNING: Full DB JSON dump contains PHI — encrypt at rest, restrict download, never email/store unencrypted.
+  app.get('/api/maintenance/backup', authenticateJWT, authorizeRoles(['IT Administrator', 'Administrator']), async (req, res) => {
     try {
       const db = getDB();
       const now = new Date();
@@ -308,7 +319,7 @@ async function startServer() {
   });
 
   // DB Diagnostic & Test Route
-  app.get('/api/db-test', async (req, res) => {
+  app.get('/api/db-test', authenticateJWT, async (req, res) => {
     const { isPostgresActive, hasPool } = getPostgresStatus();
     const host = process.env.PGHOST || process.env.DB_HOST || '';
     const port = process.env.PGPORT || process.env.DB_PORT || '5432';
@@ -394,8 +405,12 @@ async function startServer() {
   });
 
   // Route to trigger seeding high-quality clinical data
-  app.post('/api/db-test/seed', async (req, res) => {
+  // Blocked in production unless ALLOW_SEED_IN_PRODUCTION=true (explicit ops approval).
+  app.post('/api/db-test/seed', authenticateJWT, authorizeRoles(['IT Administrator', 'Administrator']), async (req, res) => {
     try {
+      if (process.env.NODE_ENV === 'production' && process.env.ALLOW_SEED_IN_PRODUCTION !== 'true') {
+        return res.status(403).json({ success: false, message: 'Seeding is blocked in production without explicit approval (ALLOW_SEED_IN_PRODUCTION=true).' });
+      }
       console.log('🌱 Received manual trigger to seed database...');
       const seedResult = await seedDatabase();
       res.json({
