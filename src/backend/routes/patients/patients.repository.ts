@@ -239,6 +239,22 @@ export class PatientsRepository {
 
     // If there are emergency details, insert them into zmc_emergency_records
     if (patient.emergencyDetails) {
+      // Server recomputes emergency total here as well — client totalBillAmount ignored.
+      const _ed = patient.emergencyDetails || {};
+      let _serverEmergencyTotal: number | null = null;
+      if (patient.cardType === 'Emergency') {
+        _serverEmergencyTotal = 0;
+        if (_ed.isSickEmergency) _serverEmergencyTotal += 25000;
+        if (_ed.isUnbookedLabour) _serverEmergencyTotal += 50000;
+        if (_ed.isAccident) _serverEmergencyTotal += 50000;
+        if (_ed.isDoctorOnCall || _ed.isAfterHours) _serverEmergencyTotal += 5000;
+        if (!(_serverEmergencyTotal > 0)) _serverEmergencyTotal = 5000;
+      }
+      let _serverCash: number | null = null;
+      if (patient.cardType === 'Emergency') {
+        const _c = Number(_ed.cashCollected || 0);
+        _serverCash = Number.isFinite(_c) && _c >= 0 ? Math.min(_c, _serverEmergencyTotal as number) : 0;
+      }
       await query(`
         INSERT INTO zmc_emergency_records (
           id, patient_id, is_sick_emergency, is_unbooked_labour, is_accident, is_doctor_on_call, is_after_hours, custom_details, total_bill_amount, cash_collected, doctor_on_call_name
@@ -252,8 +268,8 @@ export class PatientsRepository {
         !!patient.emergencyDetails.isDoctorOnCall,
         !!patient.emergencyDetails.isAfterHours,
         patient.emergencyDetails.customDetails || null,
-        patient.emergencyDetails.totalBillAmount || null,
-        patient.emergencyDetails.cashCollected || null,
+        _serverEmergencyTotal ?? patient.emergencyDetails.totalBillAmount ?? null,
+        _serverCash ?? patient.emergencyDetails.cashCollected ?? null,
         patient.emergencyDetails.doctorOnCallName || null
       ]);
     }
@@ -409,9 +425,20 @@ export class PatientsRepository {
       const docName = patient.emergencyDetails?.doctorOnCallName || 'On-Call Emergency Team';
       const priorityReason = patient.emergencyDetails?.customDetails || `Emergency medical intake. Doctor on call: ${docName}.`;
       const clinicalStatus = 'In Emergency Care';
-      
-      const totalBill = parseFloat(patient.emergencyDetails?.totalBillAmount || patient.cardFee || 5000);
-      const cashCollected = parseFloat(patient.emergencyDetails?.cashCollected || 0);
+
+      // Server-authoritative emergency total — client totalBillAmount NEVER trusted.
+      // Mirrors EMERGENCY_FEE_SCHEDULE + zmc_price_catalogue emergency rows.
+      const ed = patient.emergencyDetails || {};
+      let totalBill = 0;
+      if (ed.isSickEmergency) totalBill += 25000;
+      if (ed.isUnbookedLabour) totalBill += 50000;
+      if (ed.isAccident) totalBill += 50000;
+      if (ed.isDoctorOnCall || ed.isAfterHours) totalBill += 5000;
+      if (!(totalBill > 0)) totalBill = 5000;
+      let cashCollected = Number(ed.cashCollected || 0);
+      if (!Number.isFinite(cashCollected) || cashCollected < 0) cashCollected = 0;
+      // Cash tendered can never exceed server total — clamp overpay.
+      if (cashCollected > totalBill) cashCollected = totalBill;
       const paymentStatus = cashCollected > 0 ? 'Unconfirmed' : 'Unpaid';
 
       // Insert emergency encounter

@@ -889,12 +889,11 @@ router.post('/eye-clinic/consultations', async (req: any, res: any) => {
       treatmentPlan,
       vitals,
       services = [],
-      totalBill = 0,
-      totalPaid = 0,
-      balance = 0,
-      paymentStatus = 'UNPAID',
+      totalPaid: clientPaid = 0,
       doctorName
     } = req.body;
+    // NOTE: client totalBill/balance/paymentStatus/prices NEVER trusted.
+    // Total is resolved server-side from the canonical eye catalogue.
 
     if (!diagnosis || !diagnosis.trim()) {
       return res.status(400).json({
@@ -906,6 +905,40 @@ router.post('/eye-clinic/consultations', async (req: any, res: any) => {
     const consultId = `REC-EC-${Date.now().toString().slice(-6)}`;
     const doc = doctorName || req.user?.name || req.user?.username || 'Dr. Clara Vance (Eye Clinic)';
     const dateToday = new Date().toISOString().split('T')[0];
+
+    // Server-authoritative eye pricing from canonical catalogue.
+    const { resolveEyeServicesTotal } = await import('../../catalogue/eye-catalogue');
+    const { total: serverTotal, resolved: resolvedServices, unknown: unknownEye } = resolveEyeServicesTotal(services);
+    if (unknownEye.length > 0) {
+      const { queuePricingReview } = await import('../../catalogue/pricing-review');
+      for (const unknownName of unknownEye) {
+        try {
+          await queuePricingReview({
+            kind: 'eye',
+            code: null,
+            name: unknownName,
+            patientId: patientId || null,
+            encounterId: null,
+            requestedBy: doc,
+          });
+        } catch {
+          // Review queue write failure must not mask the pricing rejection.
+        }
+      }
+      return res.status(422).json({
+        success: false,
+        code: 'PRICING_REVIEW_REQUIRED',
+        error: `Pricing stopped: ${unknownEye.join(', ')} has no catalogue price and was parked for pricing review. No consultation was saved.`,
+        unknownServices: unknownEye,
+      });
+    }
+    const totalBill = serverTotal;
+    // Cash already recorded client-side is capped at server total — never trusted above it.
+    const claimedPaid = Number(clientPaid) || 0;
+    const totalPaid = Math.max(0, Math.min(claimedPaid, totalBill));
+    const balance = Math.max(0, totalBill - totalPaid);
+    const paymentStatus = totalPaid >= totalBill && totalBill > 0 ? 'Paid' : (totalPaid > 0 ? 'Part Paid' : 'UNPAID');
+    const serverServices = resolvedServices.map((r) => ({ name: r.name, price: r.price, category: r.category }));
 
     // 1. Insert into zmc_eye_consultations
     await query(`
@@ -930,7 +963,7 @@ router.post('/eye-clinic/consultations', async (req: any, res: any) => {
       diagnosis.trim(),
       treatmentPlan || '',
       JSON.stringify(vitals || {}),
-      JSON.stringify(services || []),
+      JSON.stringify(serverServices || []),
       totalBill,
       totalPaid,
       balance,
@@ -971,9 +1004,10 @@ router.post('/eye-clinic/consultations', async (req: any, res: any) => {
     // exist on zmc_invoices, and consultId is a zmc_eye_consultations id (no
     // zmc_encounters row), so encounter_id stays NULL (FK-safe) with eye context
     // (services, department, recorded-by) preserved in description.
-    if (Array.isArray(services) && services.length > 0) {
+    // Amounts below are server-computed from the eye catalogue.
+    if (Array.isArray(serverServices) && serverServices.length > 0) {
       const invId = `INV-EC-${Date.now().toString().slice(-6)}`;
-      const invoiceItems = services.map((s: any) => ({
+      const invoiceItems = serverServices.map((s: any) => ({
         code: (s.name || '').replace(/\s+/g, '_').toUpperCase(),
         description: `${s.name} (${s.category || 'Eye Clinic'})`,
         quantity: 1,
@@ -1036,7 +1070,15 @@ router.post('/eye-clinic/verify-payment', async (req: any, res: any) => {
     const p = pRes.rows[0];
     const totalBill = parseFloat(p.total_bill || '3000');
     const existingPaid = parseFloat(p.paid_amount || '0');
-    const payAmt = amount ? parseFloat(amount) : (totalBill - existingPaid);
+    // Server total from DB; amount = cash tendered (validated, never trusted above balance).
+    const remaining = Math.max(0, totalBill - existingPaid);
+    const payAmt = amount !== undefined && amount !== null && amount !== '' ? parseFloat(amount) : remaining;
+    if (!Number.isFinite(payAmt) || payAmt <= 0) {
+      return res.status(400).json({ success: false, error: 'amount is required and must be a number > 0' });
+    }
+    if (payAmt > remaining) {
+      return res.status(400).json({ success: false, error: 'amount must not exceed remaining balance (overpay rejected)' });
+    }
 
     const newPaid = Math.min(totalBill, existingPaid + payAmt);
     const newBalance = Math.max(0, totalBill - newPaid);

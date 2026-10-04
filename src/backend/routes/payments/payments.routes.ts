@@ -386,17 +386,65 @@ router.post(
         address,
         referringDoctor,
         tests,
-        totalAmount: reqTotal,
         paymentMethod
       } = req.body;
+      // NOTE: client-supplied totalAmount / test prices are NEVER trusted.
+      // All pricing is resolved server-side from the canonical lab catalogue.
 
       if (!patientName || (!dob && !age) || !gender || !tests || tests.length === 0) {
         return res.status(400).json({ success: false, error: 'Missing required walk-in registration details.' });
       }
 
-      // Calculate total if missing
-      const calculatedTotal = (tests || []).reduce((sum: number, t: any) => sum + Number(t.price || 0), 0);
-      const totalAmount = reqTotal !== undefined ? Number(reqTotal) : calculatedTotal;
+      // Server-authoritative pricing: resolve every test against catalogue.
+      const { resolveLabTestPrice } = await import('../../catalogue/lab-catalogue');
+      const { queuePricingReview } = await import('../../catalogue/pricing-review');
+      const resolvedTests: { code: string; name: string; price: number; category: string }[] = [];
+      const unknownTests: string[] = [];
+      for (const test of tests || []) {
+        const code = (test as any).code ?? (test as any).id;
+        const name = (test as any).name ?? (typeof test === 'string' ? test : '');
+        const resolved = resolveLabTestPrice({ code, name });
+        if (!resolved) {
+          unknownTests.push(String(code || name || 'Unknown test'));
+          continue;
+        }
+        resolvedTests.push({
+          code: resolved.code,
+          name: resolved.name,
+          price: resolved.price,
+          category: resolved.category,
+        });
+      }
+
+      if (unknownTests.length > 0) {
+        for (const unknownName of unknownTests) {
+          try {
+            await queuePricingReview({
+              kind: 'lab',
+              code: null,
+              name: unknownName,
+              patientId: null,
+              encounterId: null,
+              requestedBy: req.user?.username || 'Scientist',
+            });
+          } catch {
+            // Review queue write failure must not mask the pricing rejection.
+          }
+        }
+        return res.status(422).json({
+          success: false,
+          code: 'PRICING_REVIEW_REQUIRED',
+          error: `Pricing stopped: ${unknownTests.join(', ')} has no catalogue price and was parked for pricing review. No order was created.`,
+          unknownTests,
+        });
+      }
+
+      if (resolvedTests.length === 0) {
+        return res.status(400).json({ success: false, error: 'No valid laboratory tests provided.' });
+      }
+
+      // Server-computed total — client totalAmount/price ignored.
+      const totalAmount = resolvedTests.reduce((sum, t) => sum + t.price, 0);
 
       // 1. Create Patient Record
       const patientId = generateUUID();
@@ -443,14 +491,13 @@ router.post(
         ) VALUES ($1, $2, 1, 'Laboratory Walk-In', 'Laboratory', 'Routine', $3, 'Unconfirmed', 'Waiting for Cashier Payment', $4)
       `, [encounterId, patientId, visitReason, req.user?.username || 'Scientist']);
 
-      // 1. Calculate precise total amount from test prices
-      const calcSum = (tests || []).reduce((sum: number, t: any) => sum + (Number(t.price) || 0), 0);
-      const finalTotalAmount = calcSum > 0 ? calcSum : Number(totalAmount || 0);
+      // Server-computed total already derived above from catalogue — never from client.
+      const finalTotalAmount = totalAmount;
 
       // Create Unpaid Invoice
       const invoiceId = generateUUID();
       const invoiceNum = `INV-WALK-${Math.floor(100000 + Math.random() * 900000)}`;
-      const testNamesSummary = (tests || []).map((t: any) => `${t.name} (₦${Number(t.price || 0).toLocaleString()})`).join('; ');
+      const testNamesSummary = resolvedTests.map((t) => `${t.name} (₦${Number(t.price || 0).toLocaleString()})`).join('; ');
 
       await query(`
         INSERT INTO zmc_invoices (
@@ -474,11 +521,12 @@ router.post(
       `, [paymentId, patientId, encounterId, invoiceId, finalTotalAmount, paymentMethod || 'Cash', req.user?.id || null]);
 
       // 5. Create Laboratory Orders for Selected Tests
-      for (const test of tests) {
+      // 5. Create Laboratory Orders for Selected Tests (server-priced)
+      for (const test of resolvedTests) {
         await query(`
-          INSERT INTO zmc_laboratory_orders (id, patient_id, encounter_id, test_name, status, date_ordered)
-          VALUES ($1, $2, $3, $4, 'Pending', NOW())
-        `, [generateUUID(), patientId, encounterId, test.name]);
+          INSERT INTO zmc_laboratory_orders (id, patient_id, encounter_id, test_name, test_code, status, date_ordered, price, category)
+          VALUES ($1, $2, $3, $4, $5, 'Pending', NOW(), $6, $7)
+        `, [generateUUID(), patientId, encounterId, test.name, test.code, test.price, test.category]);
       }
 
       // 6. Create Queue Item for Cashier Collection
@@ -498,7 +546,7 @@ router.post(
       res.status(201).json({
         success: true,
         message: 'Walk-in outpatient registered successfully and sent to Cashier.',
-        data: { patientId, encounterId, hospitalNumber, totalAmount, testsCount: tests.length }
+        data: { patientId, encounterId, hospitalNumber, totalAmount, testsCount: resolvedTests.length }
       });
     } catch (err: any) {
       console.error('Error registering walk-in patient:', err);
@@ -648,36 +696,70 @@ router.post(
       if (!patientId) {
         return res.status(400).json({ success: false, error: 'patientId is required' });
       }
+      // amount = cash tendered (validated). Total bill ALWAYS comes from DB invoice.
+      const paidAmt = Number(amount);
+      if (!Number.isFinite(paidAmt) || paidAmt <= 0) {
+        return res.status(400).json({ success: false, error: 'amount is required and must be a number > 0' });
+      }
 
       const { validEncounterId, validInvoiceId } = await sanitizeEncounterAndInvoice(encounterId, invoiceId);
+
+      // Server-authoritative total: fetch invoice from DB, never trust req.body.totalBill.
+      let invoiceAmount: number | null = null;
+      let invoiceDescFallback = 'Walk-In Laboratory Investigations';
+      if (validInvoiceId) {
+        const invCheck = await query('SELECT amount, description FROM zmc_invoices WHERE id = $1', [validInvoiceId]);
+        if (invCheck.rows.length > 0) {
+          invoiceAmount = Number(invCheck.rows[0].amount) || 0;
+          invoiceDescFallback = invCheck.rows[0].description || invoiceDescFallback;
+        }
+      }
+      if (invoiceAmount === null && validEncounterId) {
+        const invEncCheck = await query(
+          'SELECT amount, description FROM zmc_invoices WHERE encounter_id = $1 ORDER BY date_issued DESC LIMIT 1',
+          [validEncounterId]
+        );
+        if (invEncCheck.rows.length > 0) {
+          invoiceAmount = Number(invEncCheck.rows[0].amount) || 0;
+          invoiceDescFallback = invEncCheck.rows[0].description || invoiceDescFallback;
+        }
+      }
+      if (invoiceAmount === null) {
+        return res.status(404).json({ success: false, error: 'Walk-in invoice not found. Cannot confirm payment without a server-priced invoice.' });
+      }
+      const totalB = invoiceAmount;
+      if (paidAmt > totalB) {
+        return res.status(400).json({ success: false, error: 'amount must not exceed invoice total (overpay rejected)' });
+      }
 
       // Phase 2: all writes below run inside a Postgres transaction; the lab
       // notification is flushed only after COMMIT, audit post-commit as well.
       const pendingNotifications: any[] = [];
       await withBillingTransaction(async (q) => {
-      // Update or insert payment
+      // Update or insert payment (paidAmt = cash tendered, totalB = DB invoice total)
       const payUpdate = await q(`
         UPDATE zmc_payments
         SET status = 'Completed', amount = $1, date_paid = NOW(), payment_method = $2, collected_by = $3
         WHERE (encounter_id IS NOT NULL AND encounter_id = $4) OR (patient_id = $5 AND status = 'Unconfirmed')
-      `, [amount || 0, paymentMethod || 'Cash', req.user?.username || 'Cashier', validEncounterId, patientId]);
+      `, [paidAmt, paymentMethod || 'Cash', req.user?.username || 'Cashier', validEncounterId, patientId]);
 
       if (payUpdate.rowCount === 0) {
         await q(`
           INSERT INTO zmc_payments (id, patient_id, encounter_id, invoice_id, amount, status, date_paid, payment_method, collected_by)
           VALUES ($1, $2, $3, $4, $5, 'Completed', NOW(), $6, $7)
-        `, [generateUUID(), patientId, validEncounterId, validInvoiceId, amount || 0, paymentMethod || 'Cash', req.user?.username || 'Cashier']);
+        `, [generateUUID(), patientId, validEncounterId, validInvoiceId, paidAmt, paymentMethod || 'Cash', req.user?.username || 'Cashier']);
       }
 
-      // Update invoice
-      if (invoiceId) {
-        await q("UPDATE zmc_invoices SET status = 'Paid' WHERE id = $1", [invoiceId]);
+      // Update invoice: Paid if fully covered, else Partially Paid
+      const invoiceStatus = paidAmt >= totalB ? 'Paid' : 'Partially Paid';
+      if (validInvoiceId) {
+        await q("UPDATE zmc_invoices SET status = $1 WHERE id = $2", [invoiceStatus, validInvoiceId]);
       } else {
-        await q("UPDATE zmc_invoices SET status = 'Paid' WHERE encounter_id = $1", [encounterId]);
+        await q("UPDATE zmc_invoices SET status = $1 WHERE encounter_id = $2", [invoiceStatus, validEncounterId]);
       }
 
       // Update encounter & patient status
-      await q("UPDATE zmc_encounters SET payment_status = 'Paid', clinical_status = 'Waiting for Laboratory' WHERE id = $1", [encounterId]);
+      await q("UPDATE zmc_encounters SET payment_status = 'Paid', clinical_status = 'Waiting for Laboratory' WHERE id = $1", [validEncounterId]);
       await q("UPDATE zmc_patients SET status = 'Waiting for Laboratory' WHERE id = $1", [patientId]);
 
       // Move queue item from Cashier Lab Payment -> Laboratory
@@ -685,13 +767,13 @@ router.post(
         UPDATE zmc_patient_queue
         SET queue_type = 'Laboratory', status = 'Waiting', arrival_time = NOW()
         WHERE encounter_id = $1
-      `, [encounterId]);
+      `, [validEncounterId]);
 
       // Record permanent lab payment entry in zmc_lab_payments
       const patRes = await q('SELECT name, hospital_number, card_type FROM zmc_patients WHERE id = $1', [patientId]);
       const pat = patRes.rows[0] || {};
-      const invRes = invoiceId ? await q('SELECT description FROM zmc_invoices WHERE id = $1', [invoiceId]) : { rows: [] };
-      const invDesc = invRes.rows[0]?.description || 'Walk-In Laboratory Investigations';
+      const invRes = validInvoiceId ? await q('SELECT description FROM zmc_invoices WHERE id = $1', [validInvoiceId]) : { rows: [] };
+      const invDesc = invRes.rows[0]?.description || invoiceDescFallback;
 
       await q(`
         INSERT INTO zmc_lab_payments (id, patient_id, patient_name, hospital_number, card_type, tests_summary, amount, payment_method, date_paid, collected_by, encounter_id, invoice_id)
@@ -703,21 +785,19 @@ router.post(
         pat.hospital_number || '—',
         pat.card_type || 'Standard',
         invDesc,
-        amount || 0,
+        paidAmt,
         paymentMethod || 'Cash',
         req.user?.username || 'Cashier',
-        encounterId,
-        invoiceId || null
+        validEncounterId,
+        validInvoiceId || null
       ]);
 
-      const totalB = req.body.totalBill ? parseFloat(req.body.totalBill) : parseFloat(amount || 0);
-      const paidAmt = parseFloat(amount || 0);
       if (totalB > paidAmt) {
         const bal = totalB - paidAmt;
         await q(`
           INSERT INTO zmc_outstanding_balances (id, patient_id, patient_name, hospital_number, encounter_id, invoice_id, purpose, department, total_bill, amount_paid, balance, status, created_at, updated_at)
           VALUES ($1, $2, $3, $4, $5, $6, $7, 'Laboratory', $8, $9, $10, 'Owing', NOW(), NOW())
-        `, [generateUUID(), patientId, pat.name || 'Walk-In Outpatient', pat.hospital_number || '—', encounterId, invoiceId || null, invDesc || 'Walk-In Laboratory Investigations', totalB, paidAmt, bal]);
+        `, [generateUUID(), patientId, pat.name || 'Walk-In Outpatient', pat.hospital_number || '—', validEncounterId, validInvoiceId || null, invDesc || 'Walk-In Laboratory Investigations', totalB, paidAmt, bal]);
 
         const sumRes = await q(`
           SELECT COALESCE(SUM(balance), 0) as remaining_total
@@ -731,14 +811,14 @@ router.post(
       pendingNotifications.push({
         type: 'LAB_WALK_IN_PAID',
         targetRole: 'Laboratory Scientist',
-        message: `Walk-in patient ${pat.name || ''} payment confirmed (₦${(amount || 0).toLocaleString()}). Ready for lab testing.`,
+        message: `Walk-in patient ${pat.name || ''} payment confirmed (₦${paidAmt.toLocaleString()}). Ready for lab testing.`,
         patientId
       });
       }); // end withBillingTransaction (lab confirm-walk-in)
 
       for (const n of pendingNotifications) broadcastNotification(n);
 
-      await logBillingAudit(req, 'WALKIN_PAYMENT_CONFIRMED', patientId, amount || 0);
+      await logBillingAudit(req, 'WALKIN_PAYMENT_CONFIRMED', patientId, paidAmt);
 
       res.json({
         success: true,
@@ -1626,12 +1706,35 @@ router.post(
       }
       const pat = patRes.rows[0] || {};
 
-      const total = parseFloat(totalBill);
+      const { validEncounterId, validInvoiceId } = await sanitizeEncounterAndInvoice(encounterId, invoiceId);
+
+      // Server-authoritative total: prefer DB invoice amount over client totalBill.
+      let total = parseFloat(totalBill);
+      if (validInvoiceId) {
+        const invRes = await query('SELECT amount FROM zmc_invoices WHERE id = $1', [validInvoiceId]);
+        if (invRes.rows.length > 0) {
+          const dbTotal = Number(invRes.rows[0].amount);
+          if (Number.isFinite(dbTotal) && dbTotal > 0) total = dbTotal;
+        }
+      } else if (validEncounterId) {
+        const invEncRes = await query(
+          'SELECT amount FROM zmc_invoices WHERE encounter_id = $1 ORDER BY date_issued DESC LIMIT 1',
+          [validEncounterId]
+        );
+        if (invEncRes.rows.length > 0) {
+          const dbTotal = Number(invEncRes.rows[0].amount);
+          if (Number.isFinite(dbTotal) && dbTotal > 0) total = dbTotal;
+        }
+      }
       const paid = parseFloat(amountPaid);
+      if (!Number.isFinite(total) || total <= 0) {
+        return res.status(400).json({ success: false, error: 'Unable to resolve invoice total from server. Provide a valid invoiceId/encounterId.' });
+      }
+      if (paid > total) {
+        return res.status(400).json({ success: false, error: 'amountPaid must not exceed server invoice total (overpay rejected)' });
+      }
       const balance = Math.max(0, total - paid);
       const cashierName = req.user?.username || 'Cashier';
-
-      const { validEncounterId, validInvoiceId } = await sanitizeEncounterAndInvoice(encounterId, invoiceId);
 
       // Idempotency key (optional): body.idempotencyKey preferred, body.clientRef
       // accepted as alias. See extractIdempotencyKey / contract comment above.
