@@ -1,15 +1,17 @@
 # ZMC EHR — System Design Guide (Production Foundation)
 
-**Version:** 1.0 · **Date:** 2026-10-05 · **Status:** Foundation for production build
+**Version:** 1.1 · **Date:** 2026-10-05 · **Status:** Foundation for production build
+**Change note for Version 1.1:** aligned to the repository orchestrator rules — Bun-only runtime, React 19 + Vite 6 + Tailwind 4 + Express 4 + PostgreSQL (`pg`) + JWT + bcrypt + `ws` single-origin stack served by `server.ts` (`/api/*` and `/ws` on one origin); all plan and conflict labels use full descriptive titles (no bare alphanumeric codes); migration and roadmap phases are written out in full with contracts, verification steps, and exit gates.
 **Sources (priority order):** (1) `ZMC_EHR_Implementation_Spec.html` (Spec) · (2) `zmc-process-flow.svg` (Flow) · (3) `ZMC_Intranet_Setup_Guide.html` (NetGuide) · (4) `ZMC_EHR_Server_Storage_Report_5Years.html` (StorageRpt)
-**Current state inspected:** React 18 + TS + Tailwind + Vite frontend; `server.ts` (Express + WS on same port); `src/backend/*` route/service/repo/validator pattern; `src/types.ts`; `zmc_*` PostgreSQL tables via DDL-in-code.
-**Target:** Intranet-only HMS on LAN server `192.168.1.1`, 9 dept laptops (.10–.18), PostgreSQL + Node/Express + WebSocket, no internet at runtime.
+**Current state inspected:** React 19 + TypeScript + Tailwind 4 + Vite 6 frontend; `server.ts` composition entrypoint (Express `/api/*` mounts before Vite middleware, `/ws` upgrade on the same origin, Vite middleware in dev / `dist/` static in prod); `src/backend/*` route/service/repository/validator pattern; `src/backend/database/db.repo.ts` (~2,300 lines: pool, DDL batch, `refreshCache`, seed); `src/backend/middleware/auth.middleware.ts` (`authenticateJWT`, `authorizeRoles`, `isRoleAuthorized`, role equivalents); `src/types.ts`; `zmc_*` PostgreSQL tables via DDL-in-code. All commands in this guide use Bun only (`bun`, `bun run`, `bunx`) — never npm, npx, node, yarn, pnpm, or tsx.
+**Target:** Intranet-only HMS on LAN server `192.168.1.1`, 9 department laptops (.10–.18), single Bun origin serving API + WebSocket + SPA, PostgreSQL, no internet at runtime.
 
 Canonical naming used everywhere in this guide (do not rename per-section):
 
-- **Role keys:** `opd` (OPD Clerk), `cashier` (Cashier), `doctor` (Doctor), `lab` (Lab), `pharmacy` (Pharmacy), `nurse` (Nurse), `eyeclinic` (Eye Clinic), `account` (Account Officer), `hr` (HR Manager) + `it_admin` (IT Administrator, maintenance only). Spec §1 is authoritative; codebase `types.ts` has 17 labels — only these 10 are permitted at login (see §7).
+- **Role keys:** `opd` (OPD Clerk), `cashier` (Cashier), `doctor` (Doctor), `lab` (Lab), `pharmacy` (Pharmacy), `nurse` (Nurse), `eyeclinic` (Eye Clinic), `account` (Account Officer), `hr` (HR Manager) + `it_admin` (IT Administrator, maintenance only). Spec Section 1 is authoritative; codebase `types.ts` carries extra legacy labels — only these 10 are permitted at login (see the role-permission matrix section).
 - **Money:** integer **kobo** in DB/API (`amount_kobo`). Display formatting `₦` only at UI edge. Never floats.
-- **Attribution rule:** every state-changing write stores `created_by / updated_by` (user id + username + role) and `created_at / updated_at`. No silent overwrites of clinical records — append/version (see §4, §11).
+- **Attribution rule:** every state-changing write stores `created_by / updated_by` (user id + username + role) and `created_at / updated_at`. No silent overwrites of clinical records — append/version (see data model and security sections).
+- **Plan labelling rule (orchestrator):** plan items always carry full descriptive titles, never bare alphanumeric codes.
 
 ---
 
@@ -17,41 +19,42 @@ Canonical naming used everywhere in this guide (do not rename per-section):
 
 ### 1.1 Assumptions [ASSUMPTION] (all must hold or be explicitly waived)
 
-1. [ASSUMPTION] Scale targets: ~120 OPD visits/day, ~40 inpatients, ~200 staff, 9 laptops + 1 server. Taken from StorageRpt §2 and brief; used for capacity (§14) and roadmap (§18).
-2. [ASSUMPTION] Single physical central server as per NetGuide §2 (i7/Xeon 8+ cores, 16 GB min / 32 GB rec, 2×1 TB SSD RAID1 + 4×2 TB HDD RAID5 in one chassis, APC 1500VA, Ubuntu 22.04, TP-Link SG1016D, CAT6, EAP225 AP). StorageRpt "3-server" is treated as 3 *copies/tiers*, not 3 physical hosts (see §14).
-3. [ASSUMPTION] No internet at runtime. Build/patch media arrives via USB/scp from dev machine. No cloud-only service in core path. NTP is via LAN (server is NTP source) [ASSUMPTION — NetGuide does not specify NTP].
+1. [ASSUMPTION] Scale targets: ~120 OPD visits/day, ~40 inpatients, ~200 staff, 9 laptops + 1 server. Taken from StorageRpt base assumptions and the brief; used for capacity and roadmap planning.
+2. [ASSUMPTION] Single physical central server as per NetGuide hardware section (i7/Xeon 8+ cores, 16 GB min / 32 GB recommended, 2×1 TB SSD RAID1 + 4×2 TB HDD RAID5 in one chassis, APC 1500VA, Ubuntu Server 22.04, TP-Link SG1016D 16-port switch, CAT6, EAP225 AP). StorageRpt "3-server" is treated as 3 *copies/tiers*, not 3 physical hosts (see storage reconciliation section).
+3. [ASSUMPTION] No internet at runtime. Build/patch media arrives via USB/scp from the dev machine. No cloud-only service in the core path. NTP is served from the LAN server [ASSUMPTION — NetGuide does not specify NTP].
 4. [ASSUMPTION] All fee **amounts** come from Flow (per brief). Spec text wins on *workflow order*; Flow wins on *prices*.
-5. [ASSUMPTION] Power/network can fail at any time. UPS covers short outages only (~15–45 min depending on load [VERIFY — confirm UPS runtime under full load]). Design assumes graceful degrade to paper + spool, never silent loss (§13).
-6. [ASSUMPTION] Team = 2 devs. No microservices/K8s/event-sourcing. Single Express monolith + single PG database + single WS hub.
-7. [ASSUMPTION] Browsers are evergreen Chrome/Edge on department laptops. No legacy IE. Primary use is desktop/kiosk; mobile is best-effort.
-8. [ASSUMPTION] Patient identity is hospital-number based (`REG/EMG/MAT/LD/EYE-…`); no biometric, no HMO/insurance in MVP (listed as future in Spec §14.8).
-9. [ASSUMPTION] One active **encounter** per patient at a time for OPD flows; admissions open a separate inpatient episode linked to the same patient (see §4).
+5. [ASSUMPTION] Power/network can fail at any time. UPS covers short outages only (~15–45 min depending on load [VERIFY — confirm UPS runtime under full load]). Design assumes graceful degrade to paper + spool, never silent loss (see reliability section).
+6. [ASSUMPTION] Team = 2 developers. No microservices, Kubernetes, or event sourcing. Single Express monolith + single PostgreSQL database + single WebSocket hub inside one Bun process.
+7. [ASSUMPTION] Browsers are evergreen Chrome/Edge on department laptops. Primary use is desktop/kiosk; mobile is best-effort.
+8. [ASSUMPTION] Patient identity is hospital-number based (`REG/EMG/MAT/LD/EYE-…`); no biometric, no HMO/insurance in the minimum viable product (listed as future in Spec developer notes).
+9. [ASSUMPTION] One active **encounter** per patient at a time for outpatient flows; admissions open a separate inpatient episode linked to the same patient (see data model section).
 
 ### 1.2 Source Conflicts (higher-priority source wins; loser noted + resolution)
 
-| # | Conflict | Sources | Winner & resolution |
-|---|----------|---------|---------------------|
-| C1 | Card fee: Flow says Clinical Card ₦3,000 (+ Maternity card ₦5,000, Eye card ₦3,000); Spec Regular form only mentions auto-added ₦5,000 consultation fee, `CONSULTATION_FEE=5000` constant. | Spec (1) vs Flow (2) | **Both apply (no true contradiction once combined):** registration creates *two* line items where applicable — card fee (3,000; maternity 5,000; eye 3,000) + consultation fee (5,000). Amounts from Flow. Spec's constant moves to server-side fee catalogue (§10). |
-| C2 | Discount effect: Spec §14.4 says HR approval does **not** modify payment (cashier applies manually); Flow says "Bill reduced automatically / instantly reflected". | Spec (1) vs Flow (2) | **Spec wins as-built; design fixes to Flow behaviour:** approval writes an immutable `discount_applications` row and recomputes invoice balance server-side (§10). Manual-only application is rejected (data-integrity risk). Flagged as intentional change. |
-| C3 | Discharge absorption: Spec §14.3 says on discharge all pending payments marked `paid` (absorbed) into one `DISCH-` bill. Flow says "Ward charges + Previous balance". | Spec (1) vs Flow (2) | **Spec wins on mechanism; Flow clarifies intent:** do NOT mark absorbed rows `paid` (destroys audit). Instead link them (`discharge_invoice_id`) and set `status='absorbed_into_discharge'` (new enum, append-only). See §10. |
-| C4 | Eye Clinic money: Spec §14.11 says eye charges live in separate `eye_clinic_records` localStorage, not main payments; Flow says "Patient pays to Cashier; returns with proof". | Spec (1) vs Flow (2) | **Spec wins as-built; design unifies:** eye charges become standard invoices/line-items payable at Cashier (§4, §10). Separate ledger is retired in migration (§5). |
-| C5 | Server count: StorageRpt demands 3-server redundant arch (Primary + On-site Backup + Off-site/Cloud); NetGuide mandates 1 central server, physically isolated, no internet. | NetGuide (3) vs StorageRpt (4) | **NetGuide wins.** "3-server" reinterpreted as 3 *copies*: (a) primary RAID1 SSDs, (b) on-site backup RAID5 HDDs in same chassis + external USB/NAS in locked second room, (c) encrypted off-site **offline** media (rotated USB HDD), not cloud. Cloud is non-compliant with no-internet constraint. |
-| C6 | Hardware vs storage size: StorageRpt provisions 133 GB × 3 = 400 GB; NetGuide provides ~1 TB usable primary + ~6 TB usable backup. | NetGuide (3) vs StorageRpt (4) | **No conflict after reconciliation** — hardware exceeds 5-yr need by wide margin (§14). No hardware change; flag that "133 GB" is logical allocation, not physical purchase. |
-| C7 | Sample `server.js` in NetGuide §5 uses hardcoded secrets (`ZMC@Secure2024!`, `ZMCHospitalSecretKey2024!`), `SELECT *`, dynamic `SET ${field}` (SQL-injection), plain `http://`/`ws://`, `listen_addresses` + `gateway4 192.168.1.254` + `8.8.8.8` DNS (implies internet). | Guardrails vs NetGuide (3) | **Guardrails win. All insecure patterns are banned** and replaced in §6/§11. `8.8.8.8`/gateway are corrected to LAN-only (no external DNS at runtime). |
-| C8 | After-hours definition: Flow emergency box says "After hours (8am–6pm)" — inverted/ambiguous. | Flow (2) internal | **Flagged ambiguous.** Design assumes After-hours = *outside* 08:00–18:00 [ASSUMPTION]. No surcharge amount is given, so no auto-surcharge; record flag only. See §10, §20 Q3. |
-| C9 | Dual prices: LFT ₦12,000/₦15,000; SEUC ₦12,000/₦15,000. No rule for which applies. | Flow (2) internal | **Flagged.** Catalogue stores both as separate SKUs (`LFT_BASIC`, `LFT_FULL`) with explicit names; doctor must pick one. No silent default (§10). |
-| C10 | Roles: `types.ts` lists 17 roles (incl. Administrator, Management, Receptionist, Records Officer, Lab Scientist…); Spec lists 9 + HR discount role. | Spec (1) vs code | **Spec wins.** Production allows 9 operational + `it_admin` (+ optional `auditor` read-only). Other labels are retired/aliased (§7). |
-| C11 | Nursing dispensing/injection records + eye records in own localStorage keys, unlinked to patient (Spec §14.11–12). | Spec (1) internal | **Accepted as as-built gap; design links all to patient+encounter** with FKs (§4, §5). |
-| C12 | NetGuide firewall opens 443 (HTTPS) but only documents HTTP deployment; no TLS cert process. | NetGuide (3) internal | **Gap fixed in §11:** LAN-TLS via private CA + Nginx termination; HSTS + redirect. Plain HTTP is banned for production. |
-| C13 | "Doctor on-call fee ₦5,000" listed under Emergency Fee Schedule — unclear if additive per emergency or conditional. | Flow (2) internal | **Assumed additive when `is_doctor_on_call=true`** [ASSUMPTION]. Recorded as separate line item, never folded silently (§10). |
+| Conflict | Sources | Winner and resolution |
+|----------|---------|----------------------|
+| Conflict — Clinical card fee versus consultation fee: Flow prices a Clinical Card at ₦3,000 (+ Maternity card ₦5,000, Eye card ₦3,000); the Spec registration form only mentions the auto-added ₦5,000 consultation fee (`CONSULTATION_FEE = 5000`). | Spec (priority 1) versus Flow (priority 2) | **Both apply (no true contradiction once combined):** registration creates *two* line items where applicable — card fee (3,000; maternity 5,000; eye 3,000) + consultation fee (5,000). Amounts come from Flow. The Spec constant moves to the server-side fee catalogue (see billing logic section). |
+| Conflict — Discount effect manual versus automatic: Spec developer notes say HR approval does **not** modify the payment (cashier applies it manually); Flow says "Bill reduced automatically / instantly reflected". | Spec (priority 1) versus Flow (priority 2) | **Spec wins as-built; design fixes to Flow behaviour:** approval writes an immutable `discount_applications` row and recomputes the invoice balance server-side (see billing logic section). Manual-only application is rejected as a data-integrity risk. Flagged as an intentional change. |
+| Conflict — Discharge absorption marking: Spec developer notes say on discharge all pending payments are marked `paid` (absorbed) into one `DISCH-` bill. Flow says "Ward charges + Previous balance". | Spec (priority 1) versus Flow (priority 2) | **Spec wins on mechanism; Flow clarifies intent:** absorbed rows are NOT marked `paid` (that destroys audit). Instead they are linked (`discharge_invoice_id`) with status `AbsorbedIntoDischarge` (new enum value, append-only). See billing logic section. |
+| Conflict — Eye Clinic money path: Spec developer notes say eye charges live in separate `eye_clinic_records` localStorage, not main payments; Flow says "Patient pays to Cashier; returns with proof". | Spec (priority 1) versus Flow (priority 2) | **Spec wins as-built; design unifies:** eye charges become standard invoices/line-items payable at Cashier (see data model and billing logic sections). The separate ledger is retired in migration (see migration plan section). |
+| Conflict — Server count: StorageRpt demands a 3-server redundant architecture (Primary + On-site Backup + Off-site/Cloud); NetGuide mandates 1 central server, physically isolated, no internet. | NetGuide (priority 3) versus StorageRpt (priority 4) | **NetGuide wins.** "3-server" is reinterpreted as 3 *copies*: (a) primary RAID1 SSDs, (b) on-site backup RAID5 HDDs in the same chassis + external USB/NAS in a locked second room, (c) encrypted off-site **offline** media (rotated USB HDD), not cloud. Cloud is non-compliant with the no-internet constraint. |
+| Conflict — Hardware versus storage size: StorageRpt provisions 133 GB × 3 = 400 GB; NetGuide provides ~1 TB usable primary + ~6 TB usable backup. | NetGuide (priority 3) versus StorageRpt (priority 4) | **No conflict after reconciliation** — hardware exceeds the 5-year need by a wide margin (see storage reconciliation section). No hardware change; "133 GB" is a logical allocation, not a physical purchase. |
+| Conflict — Insecure sample server code: the sample `server.js` in NetGuide uses hardcoded secrets, `SELECT *`, dynamic `SET` column interpolation (SQL injection), and plain `http://`/`ws://`, plus `8.8.8.8` DNS and an external gateway (implies internet). | Guardrails versus NetGuide (priority 3) | **Guardrails win. All insecure patterns are banned** and replaced in the API design and security sections. External DNS/gateway are corrected to LAN-only (no external DNS at runtime). |
+| Conflict — Application runtime Node with PM2 versus Bun single origin: NetGuide installs Node 20, `npm install`, and PM2 with API on port 3000 and WebSocket on port 3001; the repository orchestrator mandates Bun only with a single origin (`bun server.ts`, API and WebSocket on one port). | Repository orchestrator versus NetGuide (priority 3) | **Orchestrator wins for the application runtime.** The app runs under Bun as a single origin: `bun run dev` (`bun server.ts`) in development, `bun run start:production` (`bun dist/server.cjs`) in production, with `/api/*` and `/ws` on the same port. NetGuide's Node/PM2/split-port sample is superseded; systemd (not PM2) supervises the Bun process on the server. System packages via `apt` are unaffected. |
+| Conflict — After-hours definition: the Flow emergency box says "After hours (8am–6pm)" — inverted/ambiguous. | Flow internal | **Flagged ambiguous.** Design assumes After-hours = *outside* 08:00–18:00 [ASSUMPTION]. No surcharge amount is given, so no auto-surcharge; record the flag only. See billing logic section and the open-questions list. |
+| Conflict — Dual lab prices: LFT ₦12,000/₦15,000; SEUC ₦12,000/₦15,000. No rule for which applies. | Flow internal | **Flagged.** The catalogue stores both as separate SKUs with explicit names; the doctor must pick one. No silent default (see billing logic section). |
+| Conflict — Role list width: `types.ts` lists 17 roles (including Administrator, Management, Receptionist, Records Officer, Laboratory Scientist); Spec lists 9 operational roles plus the HR discount role. | Spec (priority 1) versus code | **Spec wins, with a compatibility allowance.** Production login allows the 9 operational roles + `it_admin` (+ optional read-only `auditor`). Legacy labels are retired or aliased through the existing role-equivalence helper (intentional, audited — see role-permission matrix section). |
+| Conflict — Unlinked side ledgers: nursing dispensing/injection records + eye records live in their own localStorage keys, unlinked to patients (Spec developer notes). | Spec internal | **Accepted as an as-built gap; design links all records to patient + encounter** with foreign keys (see data model and migration plan sections). |
+| Conflict — TLS gap: NetGuide firewall opens 443 (HTTPS) but only documents HTTP deployment; no certificate process. | NetGuide internal | **Gap fixed in the security section:** LAN TLS via a private certificate authority + Nginx termination; HSTS + redirect. Plain HTTP is banned for production. |
+| Conflict — Doctor on-call fee scope: "Doctor on-call fee ₦5,000" is listed under the Emergency Fee Schedule — unclear whether additive per emergency or conditional. | Flow internal | **Assumed additive when `is_doctor_on_call=true`** [ASSUMPTION]. Recorded as a separate line item, never folded silently (see billing logic section). |
 
 ---
 
 ## 2. Architecture overview
 
-**Decision — monolithic Express API + co-located WS hub + PostgreSQL + Nginx static hosting on one LAN server.**
-*Reason:* 2 devs, 120 visits/day, single site, no internet. Operational simplicity, single backup unit, and trivial transaction boundaries outweigh any scaling benefit of services.
-*Alternative considered:* separate API/WS/auth services, K8s, event-sourcing — rejected: numbers do not justify; increases failure modes and backup complexity.
+**Decision — single Bun origin: Express API + co-located WebSocket hub + PostgreSQL, with Nginx as the optional TLS/static front on the same LAN server.**
+*Reason:* 2 developers, ~120 visits/day, single site, no internet. One process means one backup unit, trivial transaction boundaries (API write + notification insert + broadcast in one place), and the repository already implements this shape (`server.ts` serving `/api/*` and `/ws`, Vite middleware in dev, `dist/` static in prod).
+*Alternative considered:* separate API / WebSocket / auth services, Kubernetes, event sourcing — rejected: the numbers do not justify it; it multiplies failure modes and backup complexity for a 2-developer team.
 
 ```mermaid
 flowchart TB
@@ -65,7 +68,7 @@ flowchart TB
     ACC["LAPTOP-ACCT .16<br/>Account SPA"]
     HR["LAPTOP-HR .17<br/>HR SPA"]
     EYE["LAPTOP-EYE .18<br/>Eye SPA"]
-    SRV["ZMC-SERVER .1<br/>Nginx :80/:443 → SPA<br/>Express API :3000 (/api)<br/>WS Hub :3001 (/ws)<br/>PostgreSQL :5432 (LAN-only)<br/>Backups → RAID5 + USB"]
+    SRV["ZMC-SERVER .1<br/>Bun single origin :3000<br/>(Express /api/* + WS /ws + SPA)<br/>Nginx :80/:443 TLS front (prod)<br/>PostgreSQL :5432 LAN-only<br/>Backups → RAID5 + USB"]
   end
   OPD <-->|HTTPS + WSS| SRV
   DOC <-->|HTTPS + WSS| SRV
@@ -78,7 +81,8 @@ flowchart TB
   EYE <-->|HTTPS + WSS| SRV
 ```
 
-Request path: Browser → Nginx (TLS, static SPA, `/api/*` → Express :3000, `/ws` → WS :3001) → Express (authN/Z, validation, transactions) → PostgreSQL (single DB, row-level audit triggers). WS hub publishes role-targeted events; `notifications` table is the durable counterpart (see §9). No outbound internet in core path; NTP/DNS are LAN-local.
+Request path (development): Browser → `http://localhost:3000` → Bun `server.ts` (Express routes under `/api/*` mounted BEFORE Vite middleware; `/ws` upgrade on the same port; Vite middleware serves the SPA).
+Request path (production): Browser → Nginx `:443` (TLS, static SPA or proxy) → Bun origin `localhost:3000` (`/api/*`, `/ws`) → Express (authentication, validation, transactions) → PostgreSQL (single database). The WebSocket hub publishes role-targeted events; the `notifications` table is the durable counterpart (see real-time notifications section). No outbound internet in the core path; NTP/DNS are LAN-local.
 
 ---
 
@@ -86,52 +90,58 @@ Request path: Browser → Nginx (TLS, static SPA, `/api/*` → Express :3000, `/
 
 | Component | Owns | Must NOT own |
 |-----------|------|--------------|
-| **SPA (React 18 + Vite + Tailwind, per-role views)** | Rendering, form validation (mirror of server), JWT storage (memory + session guard), WS subscribe/reconnect, optimistic UI with server reconciliation, Excel export (client-side `xlsx` from API data) | Price math, status transitions, auth decisions. Never trusts localStorage for truth post-MVP. |
-| **Nginx** | TLS termination (LAN CA), static SPA serving, reverse proxy (`/api`, `/ws`), gzip, `client_max_body_size 10M`, rate-limit login/API, security headers | Business logic, auth |
-| **Express API (`/api/v1`)** | JWT authN, RBAC authZ, Zod/express-validator validation, transactional billing/state-machine enforcement, catalogue pricing (server-only), audit-log writes, notification fan-out | Direct SQL string building (use parametrised repo layer only), file-PHI in logs |
-| **PostgreSQL 15+** | System of record; FKs, CHECKs, unique invoice numbers, `amount_kobo BIGINT CHECK >=0`, audit triggers, `pgcrypto` for hashing where needed | Business-rule branching (kept in API for testability; DB enforces invariants) |
-| **WS Hub (:3001, `ws` lib)** | Authenticated sockets (JWT `AUTH` handshake), role-targeted broadcast, heartbeat/reconnect, replay of missed `notifications` on rejoin | Durability (DB is durable; WS is ephemeral) |
-| **Backup agent (cron + script)** | `pg_dump` daily 02:00 → RAID5 + verify + rotate; weekly full + daily WAL-ish logical dumps (no PITR luxury on single node — documented limit); encrypted USB rotation | Application code |
-| **Seed/Migration runner** | Versioned SQL migrations (`migrations/NNNN_*.sql`), idempotent catalogue backfill (lab/meds/eye from `src/backend/catalogue/*`), blocked seeding in prod without explicit flag | Runtime business logic |
+| **SPA (React 19 + Vite 6 + Tailwind 4, per-role views)** | Rendering; form validation mirroring the server; token storage (`zmc_token` + `zmc_user` in localStorage) with expiry check; single `socketManager` subscription with 4-second reconnect; all server calls through `apiFetch` only (`src/utils/api.ts`) — never raw `fetch()`, never hardcoded origins; optimistic UI reconciled against server truth | Price maths, status transitions, authorisation decisions. Never trusts localStorage data for truth post-migration. |
+| **`server.ts` (composition entrypoint only)** | Wiring: Express JSON parsing, CORS allowlist, `/api/*` route mounts (before Vite/static middleware), `/ws` upgrade handling, dev Vite middleware vs prod `dist/` static, health endpoint. kept thin — extract any growing logic to modules on touch | Business logic, SQL, long inline endpoint handlers (the maintenance and audit-log handlers currently inline here must be extracted to modules when next touched). |
+| **Express API (`/api/*`, versioned as `/api/v1`)** | JWT authentication, RBAC authorisation, whitelist validators, transactional billing/state-machine enforcement, server-owned catalogue pricing, audit-log writes, WebSocket fan-out after each mutation via `ws.util` broadcast | Direct SQL string building (parametrised repository layer only), PHI in logs, secrets in code. |
+| **PostgreSQL 15+ with `zmc_*` tables** | System of record; foreign keys, CHECKs, unique invoice/receipt numbers, `*_kobo BIGINT CHECK (>=0)`, queue-repair support, `ANALYZE` maintenance | Business-rule branching (kept in the service layer for testability; the database enforces invariants). |
+| **In-memory `dbCache` + `refreshCache()`** | Read accelerator for list screens (existing dual model: Postgres primary, cache second). Full per-table SELECT with snake_case→camelCase mapping on refresh; queue-repair UPDATEs run inside refresh. New reads must paginate (full-table load will OOM at scale) with indexes on `patient_id` / `encounter_id` / `status`. Every new column must extend the refresh mapping or it is invisible to the UI. | Durability or write authority — writes go to Postgres first, then refresh. |
+| **WebSocket hub (`ws` lib, same origin `/ws`)** | Authenticated sockets (token via `?token=` query plus `{type:'AUTH', token}` payload; replies `AUTH_SUCCESS` / `AUTH_EXPIRED`), role-targeted broadcast, single `socketManager` singleton on the client, unread-pull replay of missed `notifications` on rejoin | Durability (the database is durable; the socket is ephemeral). |
+| **Backup agent (cron + script)** | `pg_dump -Fc` daily 02:00 → RAID5 + verify (`pg_restore --list` + checksum) + 30-day rotation (password via `PGPASSFILE`, never CLI); weekly full copied to encrypted rotated USB; monthly restore drill to staging with logged evidence | Application code. |
+| **Seed/Migration handling** | DDL batch in `db.repo.ts` `initializeDatabase` (`CREATE TABLE IF NOT EXISTS` + idempotent `ALTER TABLE ... ADD COLUMN IF NOT EXISTS`; never destructive renames — there is no migration runner by design); idempotent catalogue backfill (lab/meds/eye from `src/backend/catalogue/*`); seeding (`seedDatabase`, `POST /api/db-test/seed`, auto-seed when patients = 0) contains demo PHI and is blocked in production without written approval | Runtime business logic. |
+
+File-size discipline (orchestrator): prefer editing existing files; split files over 500 lines when touching them. Known oversize files: `db.repo.ts` (~2,300 lines), backend domain routes (nursing ~2,400 lines, payments ~1,600, HR ~1,000, exports ~870 — split by domain on touch), frontend views (OPD registration ~245 KB, Doctor ~247 KB, Cashier ~217 KB — extract hooks/components on touch).
 
 ---
 
 ## 4. Data model: entities, keys, relationships, status enums
 
-**Keys:** UUIDv7 (`gen_random_uuid_v7()` or app `crypto.randomUUID`) as PKs; human-facing numbers (`hospital_number`, `invoice_number`, `receipt_number`) are separate UNIQUE columns with sequences. **Money:** all `*_kobo BIGINT NOT NULL CHECK (>=0)`. **Clinical immutability:** `consultations`, `vitals`, `observations`, `lab_results`, `medication_administrations` are INSERT-only (no UPDATE/DELETE except IT-admin correction with `supersedes_id` + reason; history preserved).
+**Keys:** UUIDs (`crypto.randomUUID`, stored as `VARCHAR(100)`) as primary keys, matching the existing `zmc_*` schema; human-facing numbers (`hospital_number`, `maternity_number`, `invoice_number`, `receipt_number`) are separate UNIQUE columns with server-side sequences. **Money:** all `*_kobo BIGINT NOT NULL CHECK (>=0)`. **Clinical immutability:** `consultations`, `vitals`, `observations`, `lab_results`, `medication_administrations` are INSERT-only (no UPDATE/DELETE except an IT-admin correction workflow with `supersedes_id` + reason; history preserved). **Legacy-float rule:** existing `NUMERIC`/`DECIMAL` money columns are backfilled to `*_kobo BIGINT` during migration with round-half-up and a reconciliation report (see migration plan).
 
-### 4.1 Core tables
+### 4.1 Core tables (existing `zmc_*` names kept; additions marked NEW)
 
 | Table | PK / Uniques | Key FKs | Purpose |
 |-------|--------------|---------|---------|
-| `users` | `id` PK, `username` UNIQUE | — | Staff login; `password_hash` (bcrypt), `role_key`, `department`, `status` |
-| `patients` | `id` PK, `hospital_number` UNIQUE, `maternity_number` UNIQUE NULL | — | Demographics; `card_type`, `status` (current OPD-level status) |
-| `patient_vitals` | `id` PK | `patient_id→patients`, `encounter_id→encounters` | Append-only triage/inpatient vitals + `recorded_by` |
-| `maternity_records` | `id` PK | `patient_id`, `encounter_id` | Gravida/para/LMP/EDD/tribe/occupation (append-only) |
-| `emergency_records` | `id` PK | `patient_id`, `encounter_id` | Flags + `total_bill_kobo`, `cash_collected_kobo`, `doctor_on_call_name` |
-| `encounters` | `id` PK | `patient_id→patients` | One visit/episode; `visit_number`, `visit_type`, `destination_clinic`, `priority`, `payment_status`, `clinical_status`, `closed_at` |
-| `patient_queue` | `id` PK | `encounter_id`, `patient_id` | Routable queue rows: `queue_type`, `status` (`Waiting/InProgress/Done/Skipped`) |
-| `consultations` | `id` PK | `patient_id`, `encounter_id`, `doctor_id→users` | Notes/diagnosis/plan, `prescriptions JSONB` snapshot + normalised `medication_orders` |
-| `lab_orders` / `lab_results` | `id` PK | `patient_id`, `encounter_id`, `doctor_id`; results→orders | Order (`test_code`, `price_kobo` snapshotted) / result (append-only `result_details`, `findings`) |
-| `pharmacy_orders` | `id` PK | `patient_id`, `encounter_id`, `prescribed_by` | `items JSONB` + normalised status; `medication_code`, dosage/frequency/duration |
-| `invoices` | `id` PK, `invoice_number` UNIQUE | `patient_id`, `encounter_id` | Header; `total_kobo`, `paid_kobo` (maintained by trigger from payments), `balance_kobo` generated, `status` |
-| `invoice_lines` | `id` PK | `invoice_id`, `catalogue_ref` | One billable: card/consult/lab/pharmacy/ward/procedure/eye; `qty`, `unit_price_kobo`, `line_total_kobo`, `absorbed_into_discharge_id` NULL |
-| `payments` | `id` PK, `receipt_number` UNIQUE | `patient_id`, `encounter_id`, `invoice_id` | Each cash receipt; `amount_kobo`, `method`, `collected_by`; never negative (refunds are reversal rows) |
-| `outstanding_balances` | `id` PK | `patient_id`, `encounter_id`, `invoice_id` | Derived/current owing per invoice (trigger-maintained) + `status` (`Owing/PartiallyPaid/Cleared`) |
-| `discount_requests` | `id` PK | `patient_id`, `encounter_id`, `invoice_id` | `requested_amount_kobo`, `reason`, `status`, `reviewed_by/at`, `rejection_reason` |
-| `discount_applications` | `id` PK | `discount_request_id`, `invoice_id` | Immutable applied discount (`amount_kobo`) — only created on HR approve |
-| `admissions` | `id` PK | `patient_id`, `encounter_id` | Ward/bed, next-of-kin, religion, `detention` flag, admit/discharge timestamps |
-| `wards` / `beds` | `id` PK | `beds.ward_id→wards`, `beds.current_admission_id` | Bed census; assignment is transactional (no double-book) |
-| `nursing_observations` | `id` PK | `patient_id`, `admission_id` | Append-only notes |
-| `medication_administrations` | `id` PK | `patient_id`, `admission_id`, `order_id` | Dose + time + nurse |
-| `admission_charges` | `id` PK | `admission_id`, `invoice_line_id` | Ward/procedure/consumable charges feeding discharge bill |
-| `inventory` / `suppliers` / `procurements` (+`procurement_lines`) | `id` PK | lines→procurements/suppliers | Stock + multi-item orders; `status` lifecycle |
-| `employees` / `absences` / `job_openings` / `candidates` / `employee_documents` | `id` PK | absences/candidates/docs → employees/openings | HR domain |
-| `notifications` | `id` PK | `patient_id`, `encounter_id` NULL | Durable event log (`from_role`, `target_role`, `type`, `message`, `read_at`) — WS mirrors this |
-| `audit_logs` | `id` PK | `user_id` | Who/what/when/which row (`table_name`, `row_id`, `action`, `details` JSONB — **no PHI in plaintext**, see §11) |
-| `fee_catalogue` (`lab_tests`, `medications`, `eye_services`, `service_fees`) | `code` PK | — | Server-owned prices in kobo; effective-dated (`valid_from/to`) |
-| `pricing_review_queue` | `id` PK | `patient_id`, `encounter_id` | Unknown codes parked here, never silently priced (existing `zmc_pricing_review` retained) |
-| `pvs` (payment vitae) / `free_treatments` | `id` PK | — | Daily expenses + staff/dependant free-care register |
+| `zmc_users` | `id` PK, `username` UNIQUE | — | Staff login; `password` holds the bcrypt hash at steady state (legacy seed rows are plaintext and are migrated on write, never logged), `role`, `department`, `status`, `last_login`, `created_at`, `created_by` |
+| `zmc_patients` | `id` PK, `hospital_number` UNIQUE, `maternity_number` UNIQUE NULL | — | Demographics; `card_type`, `status` (current outpatient-level status); next-of-kin + brought-in-by columns for patients unable to provide details |
+| `zmc_patient_vitals` | `id` PK | `patient_id→zmc_patients`, `encounter_id→zmc_encounters` | Append-only triage/inpatient vitals + `recorded_by` |
+| `zmc_maternity_records` | `id` PK | `patient_id`, (`encounter_id` NEW) | Gravida/para/LMP/EDD/tribe/occupation/abortion/premature (append-only) |
+| `zmc_emergency_records` | `id` PK | `patient_id`, (`encounter_id` NEW) | Flags (sick/unbooked-labour/accident/doctor-on-call/after-hours) + `total_bill`/`cash_collected` (migrated to kobo) + `doctor_on_call_name` |
+| `zmc_encounters` | `id` PK | `patient_id→zmc_patients` | One visit/episode; `visit_number`, `visit_type`, `destination_clinic`, `priority`, `payment_status`, `clinical_status`, `created_by/at`, `closed_at` |
+| `zmc_patient_queue` | `id` PK | `encounter_id`, `patient_id` | Routable queue rows: `queue_type`, `status` (`Waiting/InProgress/Done/Skipped`); subject to the queue-repair UPDATEs in `refreshCache` |
+| `zmc_consultations` | `id` PK | `patient_id`, `encounter_id`, `doctor_id→zmc_users` | Notes/diagnosis/plan, `prescriptions JSONB` snapshot + normalised medication orders |
+| `zmc_laboratory_orders` / `zmc_laboratory_results` | `id` PK | `patient_id`, `encounter_id`, `doctor_id`; results→orders | Order (`test_code`, snapshotted `price_kobo`, `category`) / result (append-only `result_details`, `findings`) |
+| `zmc_pharmacy_orders` | `id` PK | `patient_id`, `encounter_id`, `prescribed_by` | `items JSONB` + status; `medication_code`, dosage/frequency/duration |
+| `zmc_invoices` | `id` PK, `invoice_number` UNIQUE (NEW constraint) | `patient_id`, `encounter_id` | Header; `total_kobo` (NEW, replaces `amount`), `paid_kobo` maintained from payments, `balance_kobo` generated, `status` |
+| `invoice_lines` (NEW) | `id` PK | `invoice_id`, catalogue ref | One billable: card/consult/lab/pharmacy/ward/procedure/eye; `qty`, `unit_price_kobo`, `line_total_kobo`, `absorbed_into_discharge_id` NULL |
+| `zmc_payments` | `id` PK, `receipt_number` UNIQUE (NEW constraint) | `patient_id`, `encounter_id`, `invoice_id` | Each cash receipt; `amount_kobo` (migrated), `method`, `collected_by`; never negative (refunds are reversal rows) |
+| `zmc_lab_payments` | `id` PK | `patient_id` (+ `encounter_id`, `invoice_id` NEW links) | Denormalised lab receipt (patient name, tests summary) for the cashier walk-in flow |
+| `zmc_outstanding_balances` | `id` PK | `patient_id`, `encounter_id`, `invoice_id` | Current owing per invoice (`total_bill`, `amount_paid`, `balance` migrated to kobo) + `status` (`Owing/PartiallyPaid/Cleared`, `cleared_by/at`) |
+| `discount_requests` (NEW table; replaces `discounts` policy list usage for flow) | `id` PK | `patient_id`, `encounter_id`, `invoice_id` | `requested_amount_kobo`, `reason`, `status`, `reviewed_by/at`, `rejection_reason` |
+| `discount_applications` (NEW) | `id` PK | `discount_request_id`, `invoice_id` | Immutable applied discount (`amount_kobo`) — created only on HR approval |
+| `zmc_discounts` (existing, kept) | `id` PK | — | Discount *policies* (STAFF50, FAMILY30, SENIOR20, EYE40, CORP15), HR-owned; distinct from per-bill requests above |
+| `zmc_admissions` | `id` PK | `patient_id`, `encounter_id` | Ward/bed, next-of-kin, religion, detention flag, admit/discharge timestamps |
+| `zmc_wards` / `zmc_beds` | `id` PK | `beds.ward_id→wards`, `beds.current_admission_id` | Bed census; assignment is transactional (no double-booking) |
+| `zmc_discharges` | `id` PK | `patient_id`, `admission_id` | Discharge record; links to the `DISCH-` invoice |
+| `nursing_observations` (NEW) | `id` PK | `patient_id`, `admission_id` | Append-only nursing notes (replaces unlinked localStorage dispensing/injection logs with linked rows) |
+| `medication_administrations` (NEW) | `id` PK | `patient_id`, `admission_id`, `order_id` | Dose + time + administering nurse |
+| `admission_charges` (NEW) | `id` PK | `admission_id`, `invoice_line_id` | Ward/procedure/consumable charges feeding the discharge bill |
+| `zmc_inventory` / `zmc_suppliers` / `zmc_procurements` (+ `procurement_lines` NEW) | `id` PK | lines→procurements/suppliers | Stock + multi-item orders; status lifecycle |
+| `zmc_employees` / `zmc_absences` / `zmc_job_openings` / `zmc_candidates` / `employee_documents` (NEW metadata) | `id` PK | absences/candidates/docs → employees/openings | HR domain; documents stored as file references, not blobs |
+| `zmc_notifications` | `id` PK | `patient_id`, `encounter_id` | Durable event log (`from_role`, `target_role`, `type`, `message`, `read_at`) — the WebSocket mirrors this table |
+| `zmc_audit_logs` | `id` PK | `user_id` | Who/what/when/which row (`user_id/name/role`, `action`, `details`, `timestamp`, `ip_address`) — **no PHI in plaintext** (see security section). Note: the 500-row UI cap is pagination, not retention; retention extension is flagged as a compliance risk. |
+| `fee_catalogue` (NEW logical group: `lab_tests`, `medications`, `eye_services`, `service_fees`; may start as the existing `src/backend/catalogue/*` seed files promoted to tables) | `code` PK | — | Server-owned prices in kobo; effective-dated (`valid_from/to`) |
+| `zmc_pricing_review` (existing, kept) | `id` PK | `patient_id`, `encounter_id` | Unknown codes park here with `kind/code/name/requested_by/status` — never silently priced, never stores amounts |
+| `pvs` (NEW; replaces `cashier_pv_entries` localStorage) / `free_treatments` (NEW) | `id` PK | — | Daily Payment Vitae expenses + staff/dependant free-care register |
 
 ### 4.2 Status enums (canonical — use exactly)
 
@@ -143,7 +153,7 @@ Request path: Browser → Nginx (TLS, static SPA, `/api/*` → Express :3000, `/
 - `procurements.status`: `Pending` · `Reviewed` · `Approved` · `Ordered` · `Delivered` · `Cancelled`
 - `queue.status`: `Waiting` · `InProgress` · `Done` · `Skipped`
 
-### 4.3 ER diagram (core clinical+billing slice)
+### 4.3 Entity-relationship diagram (core clinical + billing slice)
 
 ```mermaid
 erDiagram
@@ -167,95 +177,130 @@ erDiagram
   AUDIT_LOGS }o--|| USERS : attributes
 ```
 
-> Every entity above is used by ≥1 API group in §6 and ≥1 state machine in §8. `fee_catalogue` + `pricing_review_queue` prevent silent pricing (§10).
+> Every entity above is used by at least one API group in the API design section and at least one state machine in the state-machines section. The fee catalogue plus the pricing-review queue prevent silent pricing (see billing logic section).
 
 ---
 
-## 5. Migration plan: localStorage prototype → PostgreSQL
+## 5. Migration plan: localStorage prototype to PostgreSQL
 
-**Decision — strangler migration behind the existing route/service/repo pattern, one domain at a time, with dual-write + verification before cutover.**
-*Reason:* 2 devs, live hospital, no data loss tolerance. Big-bang rewrite risks patient/billing loss.
+**Decision — strangler migration behind the existing route/service/repository/validator pattern, one domain at a time, with verification before cutover.**
+*Reason:* 2 developers, live hospital, no data-loss tolerance. Big-bang rewrite risks patient/billing loss.
 *Alternative:* full rewrite + bulk import — rejected (unverifiable, no rollback).
 
-| Phase | Scope | Dual-write / backfill | Cutover gate |
-|-------|-------|----------------------|--------------|
-| M0 Freeze | Freeze localStorage keys as documented (Spec §13: `hospital_patients`, `hospital_employees`, `hospital_absences`, `hospital_requisitions`, `hospital_candidates`, `hospital_procurements`, `hospital_discount_requests`, `cashier_pv_entries`, `cashier_nocharge_entries`, `eye_clinic_records`, `pharmacy_stock`, `nursing_dispensing`, `nursing_injections`); add export button dumping each key to JSON | — | Inventory of keys + row counts signed off |
-| M1 Auth+Users | `users` table, bcrypt hashes (cost 12), JWT issuance/verify; retire "any username+role succeeds" | Import 10 canonical users; force password reset on first login | All 9 roles can log in via API; old path disabled by feature flag |
-| M2 Patients+Encounters+Queue | Normalise patient JSON (vitals/maternity/emergency split to child tables per `db.repo.ts` `refreshCache` mapping); generate `hospital_number` for legacy rows missing it; dedupe by (name+DOB+phone) to review queue (never auto-merge) [ASSUMPTION] | Backfill script idempotent, dry-run report first | OPD register→queue→cashier→doctor works end-to-end on PG |
-| M3 Billing (invoices/lines/payments/outstanding/discounts/PV) | Convert `amount/amountPaid` floats → `*_kobo` BIGINT (round half-up, reconcile diffs to review); rebuild `outstanding` from invoices−payments (do not trust stored balances); import discounts as requests+applications | Balance reconciliation report = 0 unexplained kobo | Cashier pending/outstanding/discharge tabs read from PG |
-| M4 Clinical (consult/lab/pharm orders+results, nursing obs/admin, admissions/beds/charges) | Link orphan `eye_clinic_records`, `nursing_dispensing`, `nursing_injections` to patient+encounter (unmatched → `pricing_review_queue`-style `linkage_review` with UI) | Spot-check 50 encounters end-to-end | Doctor/Lab/Pharmacy/Nurse views on PG |
-| M5 HR/Procurement/Inventory | Employees/absences/openings/candidates/procurements/suppliers/docs (docs as file refs, not blobs; 800 KB scans stay on disk with DB pointers) | Row-count parity | HR/Account tabs on PG; Excel export from API |
-| M6 Decommission | Read-only localStorage fallback removed; `Reset Demo` button removed from prod (or `it_admin`-only + typed confirm + audit); seed blocked in prod | Final pg_dump + restore-test | Staging sign-off → prod cutover (see §15) |
+Cross-cutting rules for every migration phase below: touch existing files first (split oversize files on touch per the thresholds in the architecture section); every new backend route follows the `constants → validator → repository (parametrised $1, snake_case) → service (transactions) → controller ({success,data}) → routes (authenticateJWT then authorizeRoles)` file pattern; mount new routers in `server.ts` BEFORE the Vite/static middleware; every encounter-scoped write validates that `patient_id` and `encounter_id` belong together; every mutation broadcasts via `ws.util` after commit and writes an audit row for PHI changes; frontend consumes new endpoints through `apiFetch` only; verification for every phase is `bun run lint` with zero new errors plus `bun run dev` smoke on `http://localhost:3000` plus `/api/db-test` row-count comparison.
 
-**Insecure-pattern fixes applied during migration (note the change):** parametrised queries only (ban dynamic `SET ${k}` — whitelist columns in validators); explicit column lists (ban `SELECT *` in app code); `amount_kobo` integers; secrets from env/file, never code; HTTPS/WSS only.
+### Migration Phase — Freeze and inventory the prototype stores
+
+- **Objective:** stop the moving target. Freeze the localStorage keys documented in Spec Section 13 (`hospital_patients`, `hospital_employees`, `hospital_absences`, `hospital_requisitions`, `hospital_candidates`, `hospital_procurements`, `hospital_discount_requests`, `cashier_pv_entries`, `cashier_nocharge_entries`, `eye_clinic_records`, `pharmacy_stock`, `nursing_dispensing`, `nursing_injections`); add an export control that dumps each key to a versioned JSON file.
+- **Work items:** inventory script counting rows per key; read-only snapshot stored with the release tag; feature flag introduced for switching each domain from localStorage to API.
+- **Cutover gate:** key inventory with row counts signed off by both developers; snapshot restorable in development.
+
+### Migration Phase — Authentication and users on PostgreSQL
+
+- **Objective:** retire "any username + role succeeds". Real bcrypt verification (cost 12), JWT issuance/verification via `src/backend/config/env.ts` (persistent secret ≥ 32 characters, `STRICT_JWT_SECRET=true` in production), 8-hour expiry, `zmc_token` + `zmc_user` session handling with `zmc-logout` reset.
+- **Work items:** import the canonical users; force password reset on first login; migrate legacy plaintext seed passwords on write (never log them); wire `authenticateJWT` + `authorizeRoles` on all PHI routes; keep the IT/Administrator/Management bypass only where already present, intentional and audited.
+- **Cutover gate:** all 9 operational roles plus IT administration can log in via the API; the trust-model path is disabled behind the feature flag; login rate-limiting active.
+
+### Migration Phase — Patients, encounters, and queue on PostgreSQL
+
+- **Objective:** normalise patient JSON into `zmc_patients` plus child tables (`zmc_patient_vitals`, `zmc_maternity_records`, `zmc_emergency_records`) exactly matching the `refreshCache` mapping already in `db.repo.ts`; open one `zmc_encounters` row per visit with `visit_number`, `visit_type`, `destination_clinic`; route through `zmc_patient_queue`.
+- **Work items:** idempotent backfill script with dry-run report; generate `hospital_number` for legacy rows missing it; dedupe candidates by name + date-of-birth + phone go to a human review queue (never auto-merge) [ASSUMPTION]; extend `refreshCache` snake→camel mapping for every new column; preserve the queue-repair UPDATEs.
+- **Cutover gate:** outpatient registration → queue → cashier → doctor works end-to-end on PostgreSQL; `/api/db-test` patient/encounter counts match the snapshot.
+
+### Migration Phase — Billing on PostgreSQL (invoices, lines, payments, outstanding, discounts, Payment Vitae)
+
+- **Objective:** convert `amount`/`amountPaid` floats to `*_kobo BIGINT` (round half-up, differences listed in a reconciliation report); rebuild outstanding balances from invoices minus payments (never trust stored balances); import discount requests as request + application rows.
+- **Work items:** `invoice_lines` introduced so card, consultation, lab, pharmacy, ward, and eye charges are itemised; sequential `invoice_number`/`receipt_number`; `Idempotency-Key` support on payment posts; Payment Vitae moved from `cashier_pv_entries` to the `pvs` table.
+- **Cutover gate:** balance reconciliation report shows zero unexplained kobo; Cashier pending/outstanding/discharge views read from PostgreSQL; duplicate payment retry returns the same receipt.
+
+### Migration Phase — Clinical records on PostgreSQL
+
+- **Objective:** consultations, lab/pharmacy orders and results, nursing observations and administrations, admissions/beds/charges — all linked to patient + encounter with the linkage validator.
+- **Work items:** link orphan `eye_clinic_records`, `nursing_dispensing`, and `nursing_injections` entries to patient + encounter; unmatched rows go to a linkage-review list with a UI (same pattern as the pricing-review queue); unknown lab/medication codes go to `zmc_pricing_review` with HTTP 422, never a silent fallback price; bed assignment and stock decrement run in transactions (`409` on bed taken / stock short).
+- **Cutover gate:** spot-check of 50 encounters end-to-end passes; Doctor, Lab, Pharmacy, and Nurse views run on PostgreSQL.
+
+### Migration Phase — Human resources, procurement, and inventory on PostgreSQL
+
+- **Objective:** employees, absences, openings, candidates, procurements (+ lines), suppliers, inventory, and document metadata.
+- **Work items:** documents stored as file references with metadata, not blobs (800 KB scans stay on disk with database pointers); procurement multi-line orders with the review → approve → order → deliver lifecycle; row-count parity check.
+- **Cutover gate:** HR and Account views run on PostgreSQL; server-generated Excel exports match database totals.
+
+### Migration Phase — Decommission the prototype stores
+
+- **Objective:** remove the read-only localStorage fallback; remove the Reset Demo control from production (or restrict to `it_admin` with typed confirmation, pre-export backup, and audit); block seeding in production without written approval.
+- **Work items:** final `pg_dump -Fc` plus restore test; staging sign-off; production cutover per the deployment section; rollback asset is the pre-cutover dump plus the localStorage snapshot.
+- **Cutover gate:** staging sign-off recorded; production cutover checklist complete (see deployment section).
+
+**Insecure-pattern fixes applied during migration (note the change):** parametrised queries only (ban dynamic column interpolation — whitelist columns in validators); explicit column lists (ban `SELECT *` in application code); `*_kobo` integers; secrets from environment/files, never code; HTTPS/WSS only; CORS tightened to the intranet origin (fixes permissive `origin:true`).
 
 ---
 
 ## 6. API design
 
-**Base:** `https://192.168.1.1/api/v1` (versioned; unversioned `/api/*` retained as 301 to `/v1` for 6 months). Auth: `Authorization: Bearer <JWT>` (8 h, LAN-only). Errors: RFC-7807-ish `{ error:{ code, message, details? }, traceId }`. Pagination: `?page&perPage&sort&order` + `X-Total-Count`. Idempotency: `Idempotency-Key` header on POST payments/discharges. All billing inputs in kobo.
+**Base:** same-origin `/api/v1` (development `http://localhost:3000/api/v1`; production `https://192.168.1.1/api/v1`). New routers mount in `server.ts` BEFORE the Vite/static middleware. Existing unversioned mounts stay as legacy aliases during transition, then retire. Auth: `Authorization: Bearer <JWT>` (8 hours, LAN-only). Envelope (repository convention): `{success:true, data}` or `{success:false, error, message?, traceId?}` with auth errors from `auth.constants` (`401 UNAUTHORIZED` / `TOKEN_EXPIRED`, `403 FORBIDDEN` — never stack traces or secrets). Pagination: `?page&perPage&sort&order` with total counts. Idempotency: `Idempotency-Key` header on payment and discharge posts. All billing inputs in kobo. Every encounter-scoped write carries `encounter_id` and the service validates that patient + encounter belong together. Every mutation broadcasts via `ws.util` after commit.
 
-**Decision — keep Express route→controller→service→repository→validator layering already in codebase.**
-*Reason:* matches team muscle memory; testable;最小 churn.
-*Alternative:* tRPC/GraphQL — rejected (tooling + offline + 2-dev cost).
+**Decision — keep the Express route → controller → service → repository → validator layering already in the codebase.**
+*Reason:* matches team muscle memory; testable; minimal churn.
+*Alternative:* tRPC/GraphQL — rejected (tooling + offline + 2-developer cost).
 
-### 6.1 Endpoints by module (screen → endpoint trace)
+### 6.1 Endpoints by module (screen → endpoint trace, with backend contract owner)
 
-| Module (screen) | Endpoints |
-|-----------------|-----------|
-| Auth (LoginScreen) | `POST /v1/auth/login` (username+password → JWT+role) · `POST /v1/auth/logout` (audit + token denylist until expiry) · `GET /v1/auth/me` · `POST /v1/auth/refresh` (rotation, 1× only) |
-| OPD (Register/Returning/Maternity/Emergency/Admissions tab) | `POST /v1/patients` · `GET /v1/patients?q&cardType&status` · `GET /v1/patients/:id` (+ `?include=vitals,maternity,emergency,encounters,balances`) · `PATCH /v1/patients/:id` (whitelisted fields only) · `POST /v1/encounters` (open visit) · `POST /v1/encounters/:id/vitals` · `POST /v1/encounters/:id/maternity` · `POST /v1/encounters/:id/emergency-cash` (total+collected → creates invoice+payment+outstanding atomically) · `GET /v1/queue?clinic&status` · `POST /v1/queue/:id/advance` (state-machine guarded) |
-| Cashier (Pending/Discharge/Outstanding/PV/Discounts) | `GET /v1/invoices?status&patientId` · `GET /v1/invoices/:id` (with lines+payments+discounts) · `POST /v1/payments` (invoiceId+amount_kobo+method; triggers balance recompute + WS) · `GET /v1/outstanding?patientId` · `POST /v1/outstanding/:id/settle` · `POST /v1/pvs` · `GET /v1/pvs` · `DELETE /v1/pvs/:id` (`it_admin`/`account` only, audit) · `POST /v1/discount-requests` · `GET /v1/discount-requests?status` · `POST /v1/free-treatments` (staff/dependant, separate register) |
-| Doctor (Outpatient/Admitted + 6 sub-tabs) | `GET /v1/queue?queueType=Doctor%20Consultation&status=Waiting` · `POST /v1/consultations` (append-only) · `POST /v1/lab-orders` (catalogue codes only; unknown → 422 + `pricing_review_queue` entry) · `POST /v1/pharmacy-orders` (same rule) · `POST /v1/admissions/recommend` → `pending_admission` · `POST /v1/admissions/:id/request-discharge` (computes bill, creates `DISCH-` invoice, links absorbed lines) · `GET /v1/patients/:id/ehr` (consult-locked export for Download EHR) |
-| Lab (Regular/Walk-in) | `GET /v1/lab-orders?status=PendingPayment|Paid|Processing` · `POST /v1/walkin-lab-registrations` (creates patient stub + encounter + invoice atomically) · `POST /v1/lab-orders/:id/start` · `POST /v1/lab-results` (append-only; order→`Completed`) · `GET /v1/catalogue/lab-tests` |
-| Pharmacy (Dispense/Admitted/Procurement/Stock) | `GET /v1/pharmacy-orders?status` · `POST /v1/pharmacy-orders/:id/dispense` (decrements stock transactionally; insufficient → 409) · `GET /v1/inventory` · `PATCH /v1/inventory/:id/adjust` (reason required, audit) · `POST /v1/procurements` (multi-line) · `GET /v1/catalogue/medications` |
-| Nursing (Admitted/Detained/Dispensing/Injections + 4 care tabs) | `POST /v1/admissions/:id/assign-bed` (transactional bed lock) · `POST /v1/admissions/:id/vitals` · `POST /v1/admissions/:id/observations` · `POST /v1/admissions/:id/administer` · `POST /v1/admissions/:id/charges` (→ invoice line) · `POST /v1/admissions/:id/detain` / `:id/process-discharge` · `GET /v1/wards` + `/beds?wardId&free=1` |
-| Eye Clinic (Register/Consult/Records) | `POST /v1/eye/registrations` (unified patient, `cardType=Eye`) · `POST /v1/eye/consultations` · `POST /v1/eye/orders` (services+frames catalogue codes) → standard invoice · `GET /v1/eye/records?q` |
-| Account (Overview/Doctors/Lab/Pharmacy/Procurement/Outstanding/Discounts + Excel) | `GET /v1/reports/revenue?groupBy=day,week,month&dept&clinician` · `GET /v1/reports/outstanding` · `GET /v1/reports/discounts` · `GET /v1/reports/procurements` · `GET /v1/exports/transactions.xlsx` (server-generated; client `xlsx` retired for canonical reports) |
-| HR (Dashboard/Employees/Absences/Recruitment/Procurement/Discounts) | `CRUD /v1/employees` (+ `/v1/employees/:id/documents` metadata) · `CRUD /v1/absences` · `CRUD /v1/recruitments/openings` + `/candidates` · `POST /v1/procurements/:id/review|approve|order|deliver` · `POST /v1/discount-requests/:id/approve|reject` (approve creates `discount_applications` + recompute + WS to `cashier`) |
-| Notifications/WS | `GET /v1/notifications?targetRole&unread=1` · `POST /v1/notifications/:id/read` · `POST /v1/notify` (creates row + WS fan-out; internal) · `WSS /ws` (`AUTH` handshake, heartbeat) |
-| Admin/Maintenance (`it_admin` only) | `GET /v1/health` · `GET /v1/db-test` (no PHI) · `POST /v1/maintenance/cache-clear|vacuum` · `GET /v1/maintenance/backup` (encrypted, audited; replaces raw JSON dump — see §11) · `POST /v1/maintenance/clear-store|system-reset` (typed confirm + dual-approval [ASSUMPTION], full audit; staging-only unless emergency runbook invoked) |
+| Module (screen) | Endpoints (method, path, core request → response, errors) |
+|-----------------|-----------------------------------------------------------|
+| Authentication (LoginScreen) | `POST /v1/auth/login` ({username, password} → {token, user}; `401` generic) · `POST /v1/auth/logout` (audit + token denylist until expiry) · `GET /v1/auth/me` · `POST /v1/auth/refresh` (single rotation). Session: `zmc_token` + `zmc_user`; `401` or `AUTH_EXPIRED` clears storage and dispatches `zmc-logout`; App resets to `/` + dashboard. |
+| Outpatient registration (Register/Returning/Maternity/Emergency/Admissions views) | `POST /v1/patients` → patient + encounter + queue rows + card/consult invoice lines · `GET /v1/patients?q&cardType&status` (paginated, explicit columns) · `GET /v1/patients/:id?include=vitals,maternity,emergency,encounters,balances` · `PATCH /v1/patients/:id` (whitelisted fields only) · `POST /v1/encounters` · `POST /v1/encounters/:id/vitals` · `POST /v1/encounters/:id/maternity` · `POST /v1/encounters/:id/emergency-cash` ({totalBillKobo, cashCollectedKobo} → invoice + payment + outstanding atomically) · `GET /v1/queue?clinic&status` · `POST /v1/queue/:id/advance` (state-machine guarded; illegal → `422 STATE`). |
+| Cashier (Pending/Discharge/Outstanding/Payment Vitae/Discounts) | `GET /v1/invoices?status&patientId` · `GET /v1/invoices/:id` (lines + payments + discounts) · `POST /v1/payments` ({invoiceId, amountKobo, method} → receipt; triggers balance recompute + broadcast) · `GET /v1/outstanding?patientId` · `POST /v1/outstanding/:id/settle` · `POST /v1/pvs` · `GET /v1/pvs` · `DELETE /v1/pvs/:id` (`account`/`it_admin` only, audited) · `POST /v1/discount-requests` · `GET /v1/discount-requests?status` · `POST /v1/free-treatments` (staff/dependant register, separate from discounts). |
+| Doctor (Outpatient/Admitted + record sub-tabs) | `GET /v1/queue?queueType=Doctor%20Consultation&status=Waiting` · `POST /v1/consultations` (append-only) · `POST /v1/lab-orders` (catalogue codes only; unknown → `422 UNKNOWN_CODE` + pricing-review row) · `POST /v1/pharmacy-orders` (same rule) · `POST /v1/admissions/recommend` → `pending_admission` · `POST /v1/admissions/:id/request-discharge` (computes bill, creates `DISCH-` invoice, links absorbed lines) · `GET /v1/patients/:id/ehr` (export for Download EHR). |
+| Laboratory (Regular/Walk-in) | `GET /v1/lab-orders?status` · `POST /v1/walkin-lab-registrations` (patient stub + encounter + invoice atomically) · `POST /v1/lab-orders/:id/start` · `POST /v1/lab-results` (append-only; order → Completed) · `GET /v1/catalogue/lab-tests`. |
+| Pharmacy (Dispense/Admitted/Procurement/Stock) | `GET /v1/pharmacy-orders?status` · `POST /v1/pharmacy-orders/:id/dispense` (transactional stock decrement; short stock → `409`) · `GET /v1/inventory` (paginated) · `PATCH /v1/inventory/:id/adjust` (reason required, audited) · `POST /v1/procurements` (multi-line) · `GET /v1/catalogue/medications`. |
+| Nursing (Admitted/Detained/Dispensing/Injections + care tabs) | `POST /v1/admissions/:id/assign-bed` (transactional bed lock; taken → `409`) · `POST /v1/admissions/:id/vitals` · `POST /v1/admissions/:id/observations` · `POST /v1/admissions/:id/administer` · `POST /v1/admissions/:id/charges` (→ invoice line) · `POST /v1/admissions/:id/detain` / `.../process-discharge` · `GET /v1/wards` + `/beds?wardId&free=1`. |
+| Eye Clinic (Register/Consult/Records) | `POST /v1/eye/registrations` (unified patient) · `POST /v1/eye/consultations` · `POST /v1/eye/orders` (service + frame catalogue codes) → standard invoice · `GET /v1/eye/records?q`. |
+| Account Officer (Overview/Doctors/Lab/Pharmacy/Procurement/Outstanding/Discounts + Excel) | `GET /v1/reports/revenue?groupBy=day,week,month&dept&clinician` · `GET /v1/reports/outstanding` · `GET /v1/reports/discounts` · `GET /v1/reports/procurements` · `GET /v1/exports/transactions.xlsx` (server-generated; client-side workbook generation retired for canonical reports). |
+| Human Resources (Dashboard/Employees/Absences/Recruitment/Procurement/Discounts) | `CRUD /v1/employees` (+ `/v1/employees/:id/documents` metadata) · `CRUD /v1/absences` · `CRUD /v1/recruitments/openings` + `/candidates` · `POST /v1/procurements/:id/review` / `/approve` / `/order` / `/deliver` · `POST /v1/discount-requests/:id/approve` / `/reject` (approval creates the immutable `discount_applications` row, recomputes the invoice, and broadcasts to `cashier`). |
+| Notifications and WebSocket | `GET /v1/notifications?targetRole&unread=1` · `POST /v1/notifications/:id/read` · `POST /v1/notify` (creates the row + fan-out; internal) · same-origin `/ws` (`?token=` query + `{type:'AUTH', token}` payload → `AUTH_SUCCESS` / `AUTH_EXPIRED`; 4-second reconnect; singleton `socketManager`). |
+| Administration and maintenance (`it_admin` only) | `GET /v1/health` · `GET /v1/db-test` (connection config without password, query latency, table counts) · `POST /v1/maintenance/cache-clear` / `/vacuum` (`ANALYZE` + counts only) · `GET /v1/maintenance/backup` (encrypted, audited; the raw full-DB JSON dump is PHI and is never emailed or stored unencrypted) · `POST /v1/maintenance/clear-store` (whitelisted `storeKey` table map only) / `/system-reset` (typed confirmation + second approver + pre-export backup + full audit; staging-only unless the emergency runbook is invoked). |
 
-### 6.2 Auth, errors, versioning (normative)
+### 6.2 Authentication, errors, versioning (normative)
 
-- Login: bcrypt compare (cost 12), generic `401 Invalid credentials` (no user-enumeration), JWT `sub/id, username, role_key, dept` + `jti`, 8 h expiry, refresh rotation once. WS `AUTH` uses same JWT; expiry → `AUTH_EXPIRED` + HTTP 401 on next API call (client refreshes).
-- AuthZ: `authenticateJWT` → `authorizeRoles([...role_keys])` per route (matrix in §7 enforced server-side, never client-only).
-- Validation: whitelist-body validators per route (fixes NetGuide dynamic-column flaw); unknown lab/med codes → `422 UNKNOWN_CODE` + auto `pricing_review_queue` row (never silent fallback price).
-- Errors: `400 VALIDATION` · `401/403 AUTH` · `404 NOT_FOUND` · `409 CONFLICT` (bed taken, stock short, duplicate invoice) · `422 STATE` (illegal transition) / `UNKNOWN_CODE` · `429 RATE_LIMIT` · `5xx` with `traceId`, no stack/PHI to client.
-- Versioning: `/api/v1`; breaking change → `/v2` + 6-month dual-serve; catalogue/fee changes are data (effective-dated), not API breaks.
+- Login: bcrypt compare (cost 12), generic `401` (no user enumeration), JWT claims (`sub/id`, username, role, department) + `jti`, 8-hour expiry, single-use refresh rotation. WebSocket `AUTH` uses the same JWT; expiry yields `AUTH_EXPIRED` and the next API call yields HTTP `401`, and the client clears the session and dispatches `zmc-logout`.
+- Authorisation: `authenticateJWT` then `authorizeRoles([...])` on every route (matrix in the role-permission section enforced server-side, never client-only). The IT/Administrator/Management bypass in the authorisation helper stays intentional and audited.
+- Validation: whitelist-body validators per route (fixes the NetGuide dynamic-column flaw); unknown lab/medication codes → `422 UNKNOWN_CODE` plus an automatic pricing-review row (never a silent fallback price).
+- Errors: `400 VALIDATION` · `401 UNAUTHORIZED` / `TOKEN_EXPIRED` · `403 FORBIDDEN` · `404 NOT_FOUND` · `409 CONFLICT` (bed taken, stock short, duplicate invoice) · `422 STATE` (illegal transition) / `UNKNOWN_CODE` · `429 RATE_LIMIT` · `5xx` with `traceId`, no stack or PHI to the client.
+- Versioning: `/api/v1`; a breaking change introduces `/api/v2` with dual-serve during transition; catalogue/fee changes are effective-dated data, not API breaks.
+- Frontend contract: views consume these endpoints through `apiFetch` only (which resolves `API_BASE` to `/api` or the build-time backend URL); no raw `fetch()`, no hardcoded origins. Navigation changes touch all three maps (`tabToPathMap` + `pathToTabMap` in `App.tsx`, department navigation + aliases in the navigation config) with `isNavigationAllowed` checked before tab switches and existing aliases preserved.
 
 ---
 
 ## 7. Role-permission matrix (role × resource × action)
 
-Legend: **C**reate **R**ead **U**pdate **D**elete **A**pprove · `—` denied · `own` = own dept/patient scope. Server enforces; UI hides denied actions.
+Legend: **C**reate **R**ead **U**pdate **D**elete **A**pprove · `—` denied · `own` = own department/patient scope. The server enforces; the UI hides denied actions. Backend role checks mirror the navigation department keys (minimum-necessary principle).
 
 | Resource | opd | cashier | doctor | lab | pharmacy | nurse | eyeclinic | account | hr | it_admin |
 |----------|-----|---------|--------|-----|----------|-------|-----------|---------|----|----------|
-| Patients (register/search/update demo) | CRU | R | R | R (walk-in: CR) | R | R | CRU (eye) | R | — | R |
+| Patients (register/search/update demographics) | CRU | R | R | R (walk-in: CR) | R | R | CRU (eye) | R | — | R |
 | Vitals (triage/inpatient) | — | — | R | — | — | CRU* | CRU* (eye vitals) | — | — | R |
 | Encounters/Queue advance | CRU | R (advance on pay) | CRU | CRU (lab queue) | R | CRU (admit flow) | CRU | R | — | R |
 | Consultations/Notes/Orders | — | — | CRU* | — | — | R | CRU* (eye) | — | — | R |
 | Lab orders/results | — (view) | R | C (order) | CRU* (process) | — | R | C/R (eye labs) | R | — | R |
 | Pharmacy orders/dispense/stock adjust | — | R | C (prescribe) | — | CRU (+D void w/ audit) | C (administer) | C (eye meds) | R | — | R |
-| Invoices/Payments/Outstanding/PV | — | CRUD (void w/ audit, no hard delete) | R | R | R | C (ward charges) | R | R | — | R |
+| Invoices/Payments/Outstanding/Payment Vitae | — | CRUD (void w/ audit, no hard delete) | R | R | R | C (ward charges) | R | R | — | R |
 | Discharge request / settle-discharge | — | U (settle) | C (request) | — | — | U (process) | — | R | — | R |
 | Discount request / approve-reject | — | C (request) | — | — | — | — | C (request eye) | R | A | R |
 | Procurement request/review/approve | — | — | — | — | C | — | C (eye supplies) | RU (review) | A | R |
-| Employees/Absences/Recruitment/Docs | — | — | — | — | — | — | — | R | CRUD | R |
-| Reports/Exports (revenue/perf/outstanding) | — | R (own) | R (own) | R (own) | R (own) | — | R (own) | CRU (exports) | R (HR/procure/discount) | R |
+| Employees/Absences/Recruitment/Documents | — | — | — | — | — | — | — | R | CRUD | R |
+| Reports/Exports (revenue/performance/outstanding) | — | R (own) | R (own) | R (own) | R (own) | — | R (own) | CRU (exports) | R (HR/procure/discount) | R |
 | Audit logs | — | — | — | — | — | — | — | R | — | CRUD (clear dual-approved) |
 | Maintenance (backup/clear/reset/vacuum) | — | — | — | — | — | — | — | — | — | C |
 
-`*` = append/version only (no silent edit of clinical rows). `it_admin` never edits clinical/billing content except correction workflow with `supersedes_id` + reason + audit.
+`*` = append/version only (no silent edit of clinical rows). `it_admin` never edits clinical/billing content except through the correction workflow with `supersedes_id` + reason + audit.
 
 ---
 
 ## 8. State machines for every workflow (patient status transitions)
 
-Global rule: all transitions are server-side, guarded by role + invoice/queue preconditions, and write `audit_logs` + `notifications` + WS event. Illegal transition → `422 STATE`.
+Global rule: all transitions run server-side, guarded by role plus invoice/queue preconditions, and write `audit_logs` + `notifications` + a WebSocket event. Illegal transition → `422 STATE`.
 
-### 8.1 Regular OPD
+### 8.1 Regular outpatient flow
 
 ```mermaid
 stateDiagram-v2
@@ -276,9 +321,9 @@ stateDiagram-v2
   pharmacy_ready --> dispensed: pharmacy dispenses
   dispensed --> completed: encounter closed
 ```
-`*`Partial allowed → `encounter.payment_status=Partial` + `outstanding_balances` row; flow continues (Flow §Payment Flow).
+`*`Partial allowed → `encounter.payment_status=Partial` + `outstanding_balances` row; flow continues (Flow payment-flow panel).
 
-### 8.2 Emergency (OPD collects cash first, doctor immediately)
+### 8.2 Emergency flow (outpatient collects cash first, doctor immediately)
 
 ```mermaid
 stateDiagram-v2
@@ -289,9 +334,9 @@ stateDiagram-v2
   waiting_doctor --> pending_admission: if admitted
   pending_admission --> admitted: nursing assigns bed
 ```
-`emergencyCashConfirmed=true` means *acknowledged*, not *fully paid* (Spec §14.6). Balance → Outstanding.
+`emergencyCashConfirmed=true` means *acknowledged*, not *fully paid* (Spec developer notes). The balance flows to Outstanding Balances.
 
-### 8.3 Maternity / Antenatal
+### 8.3 Maternity and antenatal flow
 
 ```mermaid
 stateDiagram-v2
@@ -305,7 +350,7 @@ stateDiagram-v2
   pending_discharge_billing --> discharged: cashier settles (instalments OK)
 ```
 
-### 8.4 Walk-in Lab
+### 8.4 Walk-in lab flow
 
 ```mermaid
 stateDiagram-v2
@@ -316,33 +361,33 @@ stateDiagram-v2
   lab_ready --> completed: patient collects directly
 ```
 
-### 8.5 Admission / Discharge (+ Detention)
+### 8.5 Admission, discharge, and detention flow
 
 ```mermaid
 stateDiagram-v2
   [*] --> pending_admission: doctor recommends
-  pending_admission --> admitted: nurse assigns ward+bed (txn lock)
+  pending_admission --> admitted: nurse assigns ward+bed (transaction lock)
   pending_admission --> detained: observation only (no bed)
   detained --> admitted: formal admit
   detained --> completed: released from observation
   admitted --> pending_discharge_billing: doctor request-discharge (bill computed, DISCH- invoice, lines linked not deleted)
-  pending_discharge_billing --> discharged: cashier settles (full; partial stays Owing but patient may remain pending per policy §10)
+  pending_discharge_billing --> discharged: cashier settles (full; partial stays Owing but patient may remain pending per policy — see billing logic section)
   discharged --> [*]
 ```
-Daily loop while `admitted`: vitals → meds → observations → doctor review → charges (each append-only).
+Daily loop while `admitted`: vitals → medications → observations → doctor review → charges (each append-only).
 
-### 8.6 Discount approval
+### 8.6 Discount approval flow
 
 ```mermaid
 stateDiagram-v2
   [*] --> Pending: cashier POST /discount-requests (amount+reason, ≤ balance)
-  Pending --> Approved: hr approve → discount_applications row + invoice recompute + WS to cashier
-  Pending --> Rejected: hr reject (reason required) → WS to cashier
+  Pending --> Approved: hr approve → discount_applications row + invoice recompute + broadcast to cashier
+  Pending --> Rejected: hr reject (reason required) → broadcast to cashier
   Approved --> [*]
   Rejected --> [*]
 ```
 
-### 8.7 Procurement
+### 8.7 Procurement flow
 
 ```mermaid
 stateDiagram-v2
@@ -351,10 +396,10 @@ stateDiagram-v2
   Reviewed --> Approved: hr approves funds
   Reviewed --> Cancelled: rejected
   Approved --> Ordered: supplier ordered
-  Ordered --> Delivered: pharmacist verifies + stocks (inventory txn)
+  Ordered --> Delivered: pharmacist verifies + stocks (inventory transaction)
 ```
 
-### 8.8 Eye Clinic
+### 8.8 Eye clinic flow
 
 ```mermaid
 stateDiagram-v2
@@ -368,10 +413,10 @@ stateDiagram-v2
 
 ## 9. Real-time notifications: events, channels, delivery guarantees
 
-**Channel:** WSS `wss://192.168.1.1/ws` (TLS; NetGuide `ws://` fixed). Auth: `AUTH {token}` → `AUTH_SUCCESS`/`AUTH_EXPIRED`. Heartbeat 25 s; client reconnect 3 s backoff + resync via `GET /v1/notifications?unread=1` (covers missed WS frames). Durability: every fan-out first INSERTs `notifications` (transactional with the domain write), then broadcasts; WS is ephemeral, DB is truth.
+**Channel:** same-origin WebSocket `/ws` over TLS in production (the NetGuide plain-`ws://` sample is fixed to `wss://`). Authentication: `?token=` query plus `{type:'AUTH', token}` payload on open → `AUTH_SUCCESS` / `AUTH_EXPIRED`. Client: singleton `socketManager`, 4-second reconnect, and resynchronisation via `GET /v1/notifications?unread=1` (covers missed frames). Durability: every fan-out first INSERTs the `notifications` row transactionally with the domain write, then broadcasts; the socket is ephemeral, the database is truth. Expired sessions clear storage and dispatch `zmc-logout` so the app resets to `/` + dashboard.
 
-| From → To | Event `type` | Trigger (API txn) |
-|-----------|--------------|-------------------|
+| From → To | Event `type` | Trigger (API transaction) |
+|-----------|--------------|---------------------------|
 | opd → cashier | `CONSULT_PAYMENT_DUE` | encounter opened / emergency-cash recorded |
 | cashier → doctor | `PATIENT_READY` | consultation/card payment confirmed |
 | doctor → cashier | `LAB_PAYMENT_DUE` / `PHARMACY_PAYMENT_DUE` | lab/pharmacy order created |
@@ -381,14 +426,14 @@ stateDiagram-v2
 | pharmacy → nurse/doctor | `DISPENSED` | dispensed/administered |
 | doctor → nurse | `ADMISSION_PENDING` | admit recommended |
 | nurse → doctor | `ADMITTED` | bed assigned |
-| doctor → cashier | `DISCHARGE_BILL_READY` | request-discharge (DISCH- invoice) |
+| doctor → cashier | `DISCHARGE_BILL_READY` | request-discharge (`DISCH-` invoice) |
 | cashier → nurse | `DISCHARGE_SETTLED` | discharge settled |
 | lab → cashier/doctor | `WALKIN_PAYMENT_DUE` / `WALKIN_RESULTS_READY` | walk-in invoice / results |
 | cashier → hr | `DISCOUNT_REQUESTED` | discount requested |
 | hr → cashier (+account log) | `DISCOUNT_DECIDED` | approve/reject |
-| pharmacy → account/hr | `PROCUREMENT_*` | submit/review/approve/deliver |
+| pharmacy → account/hr | `PROCUREMENT_SUBMITTED` / `REVIEWED` / `APPROVED` / `DELIVERED` | submit/review/approve/deliver |
 
-**Guarantees:** at-least-once (DB row + WS + unread-pull on reconnect); ordering per-encounter via `encounter_id` + `created_at` seq; no PHI in WS payload beyond `patient_id + display name + message` over TLS; toast + optional audio on client; `read_at` tracking per role.
+**Guarantees:** at-least-once delivery (database row + broadcast + unread-pull on reconnect); ordering per encounter via `encounter_id` + `created_at` sequence; no PHI in payloads beyond patient id, display name, and message, always over TLS; toast plus optional audio on the client; `read_at` tracking per role.
 
 ---
 
@@ -399,196 +444,243 @@ stateDiagram-v2
 | Item | Amount (₦) | Notes |
 |------|-----------|-------|
 | Clinical Card (regular) | 3,000 | per new registration |
-| Consultation Fee | 5,000 | auto-added; partial allowed |
-| Maternity Card (clinical+maternity) | 5,000 | replaces regular card for maternity |
+| Consultation Fee | 5,000 | auto-added; partial payment allowed |
+| Maternity Card (clinical + maternity) | 5,000 | replaces the regular card for maternity |
 | Maternity Visit Fee | 1,000 | per antenatal visit |
-| 1st-visit Lab Package (VDRL,HP,MP,RVS,UA) | 8,500 | bundled SKU, not sum of parts |
-| Emergency: Sick / Unbooked Labour / Accident | 25,000 / 50,000 / 50,000 | OPD records Total/Collected/Balance |
-| Doctor on-call fee | 5,000 | additive when `is_doctor_on_call` [ASSUMPTION] |
-| Lab: MP Std 3,000 · MP Comp 5,000 · Widal 5,000 · UA 3,000 · FBC 7,000 · Hb 3,000 · FBS/RBS 2,000 · LFT 12,000/15,000* · SEUC 12,000/15,000* · PSA 15,000 · HBA1c 10,500 · Hormonal 90,000 · Cholesterol 10,000 · T-Bilirubin 7,000 · RVS 5,000 · HbsAg 3,500 · Syphilis 3,500 · Blood Group 3,000 · Genotype 10,000 · Cross-match 10,000 · C&S 18,000 · Sputum 18,000 · HP 5,000 | as listed | `*` = two SKUs, explicit pick (C9) |
-| Eye: Card 3,000 · VA 1,000 · AutoRef 5,000 · Tonometry 5,000 · CVF 10,000 · SlitLamp 10,000 · Ophthalmoscopy 1,000 · Frames 15,000/20,000/35,000 · Irrigation 5,000 · FB removal 10,000 · Dilation 2,000 | as listed | unified invoice (C4 fix) |
+| First-visit Lab Package (VDRL, HP, MP, RVS, UA) | 8,500 | bundled SKU, not the sum of parts |
+| Emergency: Sick / Unbooked Labour / Accident | 25,000 / 50,000 / 50,000 | Outpatient records Total / Collected / Balance |
+| Doctor on-call fee | 5,000 | additive when `is_doctor_on_call` is true [ASSUMPTION] |
+| Lab: MP Standard 3,000 · MP Comprehensive 5,000 · Widal 5,000 · Urinalysis 3,000 · FBC 7,000 · Hb 3,000 · FBS/RBS 2,000 · LFT basic/full 12,000/15,000 (two SKUs, explicit pick — see the dual-price conflict) · SEUC basic/full 12,000/15,000 (two SKUs, explicit pick) · PSA 15,000 · HBA1c 10,500 · Hormonal Profile 90,000 · Cholesterol 10,000 · Total Bilirubin 7,000 · RVS 5,000 · HbsAg 3,500 · Syphilis 3,500 · Blood Group 3,000 · Genotype 10,000 · Cross Matching 10,000 · Culture and Sensitivity 18,000 · Sputum Analysis 18,000 · HP 5,000 | as listed | unknown codes → HTTP 422 + pricing-review row |
+| Eye: Card 3,000 · Visual Acuity 1,000 · Auto Refraction 5,000 · Tonometry 5,000 · CVF 10,000 · Slit Lamp 10,000 · Ophthalmoscopy 1,000 · Frames 15,000/20,000/35,000 · Irrigation 5,000 · Foreign Body Removal 10,000 · Dilation 2,000 | as listed | unified invoice (see the eye-money conflict resolution) |
 
 **Rules:**
 
-1. Invoice = header + immutable lines (`qty × unit_price_kobo`). `total_kobo` = Σ lines − Σ applied discounts. `paid_kobo` = Σ payments (trigger). `balance = total − paid`. Partial payment always allowed (Flow); each receipt is a separate `payments` row with sequential `receipt_number`; outstanding row updated, never deleted until `Cleared`.
-2. Instalments (2nd/3rd) post to same `invoice_id` with idempotency keys; overpay → `409` (or credit note row [ASSUMPTION — policy choice, default reject overpay]).
-3. Discounts: request ≤ balance, reason required; HR approve → `discount_applications` + recompute (C2 fix); reject needs reason; all in Account Discounts Register; free treatments (staff/dependants/MD relatives) use separate `free_treatments` register, not discount flow.
-4. Discharge bill = Σ open `admission_charges` + Σ linked prior unpaid invoice balances (linked via `absorbed_into_discharge_id`, status `AbsorbedIntoDischarge` — never marked `Paid`, C3 fix). `DISCH-<seq>` invoice in Cashier Discharge Bills; `patient.status=pending_discharge_billing` until settled; only then `discharged`. Partial discharge payment keeps status pending (policy default; configurable threshold [ASSUMPTION]).
-5. PVs (Payment Vitae): daily expenses, `approved_by` default Doctor, deletable only by `account`/`it_admin` with audit + totals footer.
-6. Unknown lab/med/eye code → `422` + `pricing_review_queue` row; cashier cannot price manually. Catalogue backfill owns prices.
-7. Display: `₦5,000.00` from `500000` kobo via single `formatKobo()` helper; API never accepts naira floats.
+1. Invoice = header + immutable lines (`qty × unit_price_kobo`). `total_kobo` = sum of lines − sum of applied discounts. `paid_kobo` = sum of payments (trigger-maintained). `balance` = total − paid. Partial payment is always allowed (Flow); each receipt is a separate `payments` row with a sequential `receipt_number`; the outstanding row is updated, never deleted until `Cleared`.
+2. Instalments (2nd/3rd visits) post to the same `invoice_id` with idempotency keys; overpay → `409` (or a credit-note row [ASSUMPTION — policy choice, default is to reject overpay]).
+3. Discounts: request ≤ balance, reason required; HR approval creates the immutable `discount_applications` row and recomputes the invoice server-side (see the discount-effect conflict resolution); rejection needs a reason; all discounts appear in the Account Discounts Register; free treatments (staff/dependants/MD relatives) use the separate `free_treatments` register, not the discount flow.
+4. Discharge bill = sum of open `admission_charges` + sum of linked prior unpaid invoice balances (linked via `absorbed_into_discharge_id`, status `AbsorbedIntoDischarge` — never marked `Paid`; see the discharge-absorption conflict resolution). The `DISCH-<seq>` invoice appears in Cashier Discharge Bills; `patient.status=pending_discharge_billing` until settled; only then `discharged`. Partial discharge payment keeps the status pending (policy default; configurable threshold [ASSUMPTION]).
+5. Payment Vitae: daily expenses, `approved_by` defaults to Doctor, deletable only by `account`/`it_admin` with audit plus totals footer.
+6. Unknown lab/medication/eye code → `422` + `pricing_review_queue` row; the cashier cannot price manually. The catalogue backfill owns prices.
+7. Display: `₦5,000.00` renders from `500000` kobo via a single `formatKobo()` helper; the API never accepts naira floats.
 
 ---
 
 ## 11. Security
 
 **Decisions (each fixes a NetGuide-sample flaw — note the change):**
-- **Secrets:** env/file (`/etc/zmc/.env`, root-only 600) or systemd `EnvironmentFile`; never in code/logs; JWT ≥256-bit random; separate `DB_PASSWORD`, `JWT_SECRET`; rotation runbook. *(Fixes hardcoded `ZMC@Secure2024!`.)*
-- **Transport:** Nginx TLS with private LAN CA (distribute CA to 9 laptops once) + `wss://`; HSTS; HTTP→HTTPS redirect. *(Fixes plain `http/ws`.)*
-- **DB:** parametrised queries + whitelist validators only *(fixes dynamic `SET ${k}`)*; explicit columns *(fixes `SELECT *`)*; `pg_hba` LAN-only `md5/scram`, `listen_addresses='192.168.1.1'`; app role least-privilege (no SUPERUSER/DDL at runtime; migrations via separate owner); daily `ANALYZE`.
-- **Passwords:** bcrypt cost 12; generic login errors; lockout 5 fails/15 min + audit; first-login reset; 8 h JWT + single-use refresh; WS re-auth on expiry.
-- **Sessions:** server-side denylist (`jti`) until expiry on logout; idle warning 15 min before expiry [ASSUMPTION]; no concurrent-session ban (ward usability) but audit each login.
-- **Audit:** append-only `audit_logs` (trigger + service writes: user, role, IP, table, row, action, before/after hash — **no PHI plaintext**; details reference IDs). `TRUNCATE`/clear requires `it_admin` + typed confirm + second approver + pre-export.
-- **Backup secrecy:** dumps encrypted (age/GPG) before touching USB; filenames without patient identifiers.
-- **Headers/limits:** `helmet`-equiv headers, CORS allowlist `https://192.168.1.1` only (fixes `origin:true`), JSON 1 MB, login rate-limit, `50M→10M` upload cap (lab attachments), file-type allowlist + AV-scan hook [ASSUMPTION].
+- **Secrets:** environment/files (root-only `600` permissions, e.g. systemd `EnvironmentFile`); never in code or logs; JWT secret persistent and ≥ 256-bit random; separate database password and JWT secret; `STRICT_JWT_SECRET=true` in production to fail fast when missing; rotation runbook. *(Fixes hardcoded sample secrets. Keep `JWT_SECRET` out of logs; verify no secrets in git history with `.gitignore` covering `.env`.)*
+- **Transport:** Nginx TLS with a private LAN certificate authority (distribute the CA to the 9 laptops once) + `wss://`; HSTS; HTTP→HTTPS redirect. *(Fixes plain `http/ws`.)*
+- **Application hardening:** `helmet`-equivalent headers; rate-limit on `/api/auth/login` and `/api/verify-identity`; `express.json` size limit; CORS allowlist restricted to the intranet origin (fixes permissive `origin:true`). *(New versus NetGuide sample.)*
+- **Database:** parametrised queries + whitelist validators only *(fixes dynamic column interpolation)*; explicit column lists *(fixes `SELECT *`)*; `pg_hba` LAN-only (`md5`/`scram`), `listen_addresses` bound to the intranet IP; application role least-privilege (no SUPERUSER/DDL at runtime); `ANALYZE` via the vacuum endpoint.
+- **Passwords:** bcrypt hash/compare only (cost 12); the seed's legacy plaintext passwords are migrated on write and never logged; generic login errors; lockout after 5 failures/15 minutes + audit; first-login reset; 8-hour JWT + single-use refresh; WebSocket re-authentication on expiry.
+- **Sessions:** token pair in localStorage (`zmc_token` + `zmc_user`) is XSS-sensitive — sanitise renders, no token/PHI in console; expiry check on load; server-side denylist (`jti`) until expiry on logout; idle warning 15 minutes before expiry [ASSUMPTION]; no concurrent-session ban (ward usability) but audit each login; `401`/`AUTH_EXPIRED` clears the session and dispatches `zmc-logout`.
+- **Audit:** append-only `zmc_audit_logs` (service writes: user id/name/role, action, details, timestamp, IP — **no PHI plaintext**; details reference IDs). Log every PHI create/update/delete plus every Data Clear and System Reset. `TRUNCATE`/clear requires `it_admin` + typed confirmation + second approver + pre-export. Note the 500-row UI cap is a compliance risk — retention extension is flagged.
+- **Backup secrecy:** dumps encrypted before touching USB; filenames without patient identifiers; the maintenance backup download contains full-database PHI — restrict to IT administration, encrypt at rest, never email or store unencrypted.
+- **Uploads:** lab attachment cap, file-type allowlist, AV-scan hook [ASSUMPTION].
+- **Release gate:** block release on new lint errors or missing audit entries; check dependency CVEs (express/pg/jwt/ws/vite/react) on dependency changes.
 
 ---
 
 ## 12. Compliance: Nigeria Data Protection Act 2023
 
->cite the Act as named in brief; procedural specifics (filing thresholds, fees) marked [VERIFY] with NDPC.
+> The Act is cited as named in the brief; procedural specifics (filing thresholds, fees, timelines) are marked [VERIFY] with the Nigeria Data Protection Commission.
 
-- **Lawful basis & consent:** treatment contract + explicit consent captured at registration (paper→scan or e-tick + timestamp + staff witness); separate consent for maternity/minor/guardian flows [ASSUMPTION on wording — legal review required]. Withdrawal path documented; withdrawal ≠ deletion of clinical safety record (retention overrides with justification logged).
-- **Rights:** access, correction (via `supersedes` correction, original retained), deletion where retention permits, objection; fulfilled via `it_admin` + DPO within statutory window [VERIFY days].
-- **Minimisation & secrecy:** role-matrix (§7) is the access-control evidence; `SELECT *` ban, PHI-free logs, encrypted backups/USB, locked server room (NetGuide), screen-lock policy 5 min [ASSUMPTION].
-- **Retention:** active clinical 5 yr online (matches StorageRpt horizon) + [VERIFY — hospital record rules may require longer, e.g. 10 yr]; audit logs 5 yr; HR docs per employment + 3 yr post-exit [ASSUMPTION — confirm with counsel]; then secure archive (encrypted offline) or certified destruction with log.
-- **Breach:** internal 24 h triage + contain + assess; regulator/data-subject notification per NDPC timelines [VERIFY]; logged as incident with post-mortem.
-- **Roles:** designate Data Protection Officer (HR or IT lead dual-hat initially [ASSUMPTION]); processor clauses for suppliers with data access; annual self-audit.
+- **Lawful basis and consent:** treatment contract + explicit consent captured at registration (paper→scan or e-tick + timestamp + staff witness); separate consent for maternity/minor/guardian flows; next-of-kin and brought-in-by fields are required for incapacitated patients [ASSUMPTION on wording — legal review required]. Withdrawal path documented; withdrawal does not equal deletion of the clinical safety record (retention overrides with justification logged).
+- **Rights:** access, correction (via the `supersedes` correction, original retained), deletion where retention permits, objection; fulfilled via `it_admin` + Data Protection Officer within the statutory window [VERIFY days].
+- **Minimisation and secrecy:** the role matrix (role-permission section) is the access-control evidence with backend roles matching navigation department keys; `SELECT *` ban, PHI-free logs, encrypted backups/USB, locked server room (NetGuide), 5-minute screen-lock policy [ASSUMPTION]; frontend clears tokens and PHI views on `401`/`AUTH_EXPIRED`.
+- **Retention:** active clinical 5 years online (matches the StorageRpt horizon) + [VERIFY — hospital record rules may require longer, e.g. 10 years]; audit logs 5 years (note the 500-row UI cap is display-only); HR documents per employment + 3 years post-exit [ASSUMPTION — confirm with counsel]; then secure archive (encrypted offline) or certified destruction with a log.
+- **Breach:** internal 24-hour triage + contain + assess; regulator/data-subject notification per Commission timelines [VERIFY]; logged as an incident with post-mortem.
+- **Roles:** designate a Data Protection Officer (HR or IT lead dual-hat initially [ASSUMPTION]); processor clauses for suppliers with data access; annual self-audit.
 
 ---
 
 ## 13. Reliability: backups, restore tests, RAID limits, UPS, failover, outage behaviour
 
-- **Backup (single-server reality):** `pg_dump -Fc` daily 02:00 → `/mnt/backup` (RAID5 HDDs) + verify (`pg_restore --list` + checksum) + 30-day rotation (NetGuide cron kept, password via `PGPASSFILE`, not CLI); weekly full copied to encrypted rotated USB (off-site analogue, C5); monthly restore-drill to staging (log evidence). WAL archiving enabled for PITR *within* node [ASSUMPTION — document as best-effort, not HA].
+- **Backup (single-server reality):** `pg_dump -Fc` daily 02:00 → `/mnt/backup` (RAID5 HDDs) + verify (`pg_restore --list` + checksum) + 30-day rotation (NetGuide cron kept, password via `PGPASSFILE`, not CLI); weekly full copied to encrypted rotated USB (off-site analogue — see the server-count conflict resolution); monthly restore drill to staging with logged evidence. WAL archiving enabled for point-in-time recovery *within* the node [ASSUMPTION — documented as best-effort, not high availability].
+- **Maintenance safety order (existing `server.ts` endpoints):** backup first (backup download contains PHI — encrypt and record the actor); prefer cache-clear, then single-key clear-store, then system-reset last — never system-reset or seed in production without written approval. The clear-store `storeKey` whitelist (table map) governs impact — e.g. `patients` cascades to emergency/maternity/vitals/queue/consultations/pharmacy/lab/payments/invoices/encounters; confirm cascade impact before running. Rollback = restore the backup JSON / re-seed + `refreshCache`.
 - **RAID limits (stated plainly):** RAID1 survives 1 SSD failure; RAID5 survives 1 HDD failure — **not backup** (fire/theft/ransomware/accidental `TRUNCATE` need the USB + dumps). Rebuild windows are degraded/slow — monitor (`mdadm`, SMART). Annual disk-replacement budget.
-- **UPS:** APC 1500VA covers graceful shutdown, not continued clinic [VERIFY runtime]. `apcupsd` → auto `pg_checkpoint` + service stop + OS halt on low battery. Quarterly discharge test.
-- **Failover:** no automatic failover (single node). RTO ≤4 h (spare PSU/disk + USB restore), RPO ≤24 h (daily dump) — posted in ward runbook [ASSUMPTION targets]. Warm spare laptop imaged as emergency read-only viewer [ASSUMPTION].
-- **Outage behaviour:** network drop → SPA shows banner, queues WS reconnect, API calls surface retry (no silent queue of billing writes by default — cashier must not "remember and retype"; instead LAN-redundant cable + AP failover). Server down → paper fallback forms (pre-printed encounter/billing sheets with numbering) + next-day back-entry with `back_entered=true` + dual verification. Power loss mid-payment → payment commits or rolls back atomically (DB txn); receipt printed only after commit; duplicate-print uses same `receipt_number` (idempotent).
+- **UPS:** APC 1500VA covers graceful shutdown, not continued clinic [VERIFY runtime]. `apcupsd` → automatic checkpoint + service stop + OS halt on low battery. Quarterly discharge test.
+- **Failover:** no automatic failover (single node). Recovery Time Objective ≤ 4 hours (spare PSU/disk + USB restore), Recovery Point Objective ≤ 24 hours (daily dump) — posted in the ward runbook [ASSUMPTION targets]. Warm spare laptop imaged as an emergency read-only viewer [ASSUMPTION].
+- **Outage behaviour:** network drop → SPA banner, WebSocket reconnect loop (4-second backoff), API calls surface retry (no silent queuing of billing writes by default — the cashier must not "remember and retype"; instead LAN-redundant cable + access-point failover). Server down → paper fallback forms (pre-printed encounter/billing sheets with numbering) + next-day back-entry with `back_entered=true` + dual verification. Power loss mid-payment → payment commits or rolls back atomically (database transaction); receipt printed only after commit; duplicate print uses the same `receipt_number` (idempotent).
 
 ---
 
 ## 14. Storage and capacity: reconcile StorageRpt with NetGuide hardware
 
-StorageRpt math (accepted): raw 78.25 GB/5 yr → +25% PG overhead = 97.81 GB → ×3 copies = 293.44 GB → +20% growth = **400 GB logical**. Largest drivers: lab attachments 13.70 GB + audit/event logs 18.26 GB + indexes 10 GB.
+StorageRpt maths (accepted): raw 78.25 GB/5 years → +25% PostgreSQL overhead = 97.81 GB → ×3 copies = 293.44 GB → +20% growth = **400 GB logical**. Largest drivers: lab attachments 13.70 GB + audit/event logs 18.26 GB + indexes 10 GB.
 
-NetGuide hardware usable: RAID1 2×1 TB SSD → **~1 TB** primary (OS+PG+app); RAID5 4×2 TB HDD → **~6 TB** backup. **Conclusion: hardware exceeds 5-yr need ~2.5× on primary and ~15× on backup — no purchase needed.** Allocate logically: 150 GB PG data + 50 GB WAL/logs + 100 GB OS/app/snapshots on SSD (rest free for growth/DICOM staging); HDD holds 30 daily + 12 weekly + 12 monthly dumps (~50–150 GB actual, rest free). Re-evaluate at 70% SSD. Excluded (per StorageRpt): DICOM/PACS (+2–10 TB/yr if added — separate server then).
+NetGuide hardware usable: RAID1 2×1 TB SSD → **~1 TB** primary (OS + PostgreSQL + app); RAID5 4×2 TB HDD → **~6 TB** backup. **Conclusion: hardware exceeds the 5-year need ~2.5× on primary and ~15× on backup — no purchase needed.** Allocate logically: 150 GB database + 50 GB WAL/logs + 100 GB OS/app/snapshots on SSD (rest free for growth/DICOM staging); HDD holds 30 daily + 12 weekly + 12 monthly dumps (~50–150 GB actual, rest free). Re-evaluate at 70% SSD. Excluded (per StorageRpt): DICOM/PACS (+2–10 TB/year if added — separate server then). Database growth guard: new list reads paginate (the `refreshCache` full-table pattern will OOM at scale); add indexes on `patient_id` / `encounter_id` / `status`.
 
 ---
 
-## 15. Deployment and environments (dev, staging, prod), update process
+## 15. Deployment and environments (development, staging, production), update process
 
-| Env | Where | Data | Purpose |
+| Environment | Where | Data | Purpose |
 |-----|-------|------|---------|
-| dev | Dev laptops (Docker/PG15 + Node 20) | synthetic seed only | daily work, migrations first-run |
-| staging | Spare PC or VM mirroring prod (Ubuntu 22.04, same Nginx/PG) | **anonymised** prod dump (PHI scrubbed) | pre-prod verification, restore-drill target, UAT by dept heads |
-| prod | `192.168.1.1` | live | clinic |
+| Development | Developer laptops (Bun + local PostgreSQL) | synthetic seed only | daily work, DDL-batch changes first-run |
+| Staging | Spare PC or VM mirroring production (Ubuntu 22.04, same Nginx/PostgreSQL) | **anonymised** production dump (PHI scrubbed via script) | pre-production verification, restore-drill target, UAT by department heads |
+| Production | `192.168.1.1` | live | clinic |
 
-**Update process (offline-safe, 2-dev friendly):** tag release → build SPA (`pnpm run build`) + `npm ci` backend → checksum → USB/scp to staging → run migrations (up-only, backward-compatible; down-script stored but rarely used) → smoke matrix (NetGuide §10: ping, login all roles, OPD→Cashier sync, WS notify, backup run) → UAT sign → maintenance window (announce, `pm2 stop`, `pg_dump` pre-snapshot) → prod deploy → migrate → `pm2 restart` → health + smoke → tag + changelog + audit entry. Rollback = previous build + pre-snapshot restore (documented data-loss window; prefer forward-fix).
+**Commands (Bun only):** `bun install` · `bun run dev` (full system on `http://localhost:3000`) · `bun run lint` (`bunx tsc --noEmit`) · `bun run build` (Vite + esbuild bundle to `dist/`) · `bun run start:production` (`NODE_ENV=production`, serves `dist/` static). Note: `package.json` scripts still reference `tsx`/`node` — migrate them to the Bun invocations above as part of the hardening phase. Never run two dev servers; port-in-use means stop the old instance. Never commit `.env`.
+
+**Update process (offline-safe, 2-developer friendly):** tag release → `bun run build` → checksum → USB/scp to staging → apply DDL batch (up-only, backward-compatible idempotent ALTERs; destructive renames forbidden) → smoke matrix (ping, login all roles with correct default tabs per `getDefaultTabForUser`, outpatient→Cashier sync, WebSocket notify with `AUTH_SUCCESS`, backup run) → UAT sign → maintenance window (announce, pre-snapshot `pg_dump -Fc`) → production deploy → apply DDL → restart Bun process (systemd) → health + smoke → tag + changelog + audit entry. Rollback = previous build + pre-snapshot restore (documented data-loss window; prefer forward-fix). Health: `GET /api/health`; diagnostics: `GET /api/db-test` (sans password, with table counts and local backup stats).
 
 ---
 
 ## 16. Monitoring and logging
 
-- **Health:** `GET /v1/health` (uptime, PG latency, WS clients, disk %, UPS status [ASSUMPTION — via `apcupsd` hook]) polled by staging dashboard + simple LAN status page (`it_admin` only).
-- **Logs:** structured JSON to journald/files (API access with `token=[REDACTED]`, error `traceId`, slow-query >500 ms); **never PHI** (IDs only; names/notes/diagnoses excluded by allowlist logger). Rotation 30 d. `pm2 logs` + `pg_stat_statements` weekly review.
-- **Alerts (LAN-local):** disk >70/85%, PG down, WS disconnect storm, backup fail/verify fail, UPS on-battery, login-burst. Alert via WS toast to `it_admin` + audible + log (no SMS/cloud).
-- **Accountability:** `audit_logs` 500-row UI cap is pagination, not retention (full 5-yr in DB); monthly Account+HR reconciliation export.
+- **Health:** `GET /api/v1/health` (uptime, PostgreSQL latency, WebSocket clients, disk %, UPS status [ASSUMPTION — via `apcupsd` hook]) polled by the staging dashboard + a simple LAN status page (`it_admin` only). Diagnostics via `GET /api/db-test`.
+- **Logs:** structured JSON to journald/files (API access with `token=[REDACTED]`, error `traceId`, slow-query over 500 ms); **never PHI** (IDs only; names/notes/diagnoses excluded by an allowlist logger); `JWT_SECRET` never in logs. Rotation 30 days. Bun process logs + `pg_stat_statements` weekly review.
+- **Alerts (LAN-local):** disk over 70/85%, PostgreSQL down, WebSocket disconnect storm, backup fail/verify fail, UPS on-battery, login burst. Alert via WebSocket toast to `it_admin` + audible + log (no SMS/cloud).
+- **Accountability:** `audit_logs` 500-row UI cap is pagination, not retention (full 5-year retention in the database); monthly Account + HR reconciliation export.
 
 ---
 
-## 17. Project/folder structure (keep current, tighten)
+## 17. Project and folder structure (keep current, tighten)
 
 ```
 zikobyteHMRsystem/
-  server.ts                  # Express+WS bootstrap (hardened cors/helmet/rate-limit)
+  server.ts                        # composition entry ONLY (Express, /api mounts BEFORE Vite/static, /ws upgrade, health, dev Vite middleware / prod dist static). Do NOT bloat; extract inline handlers to modules on touch.
   src/
-    types.ts                 # shared DTOs (kobo ints, enums from §4) — single source
+    types.ts                       # shared DTOs (kobo ints, status enums) — single source; align with backend camelCase mapping, add missing fields instead of `any`
+    config/navigation.ts           # getAllowedNavigationIds, isNavigationAllowed, department keys, tab maps, aliases, getDefaultTabForUser
+    utils/api.ts                   # API_BASE, apiFetch, IntranetSocket/socketManager (?token= + AUTH payload, 4s reconnect, zmc-logout on AUTH_EXPIRED)
+    App.tsx                        # tabToPathMap/pathToTabMap, getDefaultTabForUser, DashboardLayout routing; isNavigationAllowed before setActiveTab
     backend/
-      config/env.ts          # strict secret resolution (no hardcoded fallback in prod)
-      database/db.repo.ts    # pool + DDL/migrations runner + refreshCache
-      middleware/auth.middleware.ts
-      utils/ws.util.ts       # role-targeted broadcast + unread-pull
-      catalogue/{lab,meds,eye}-catalogue.ts  # server-owned prices (kobo)
+      config/env.ts                # JWT_SECRET resolution, NODE_ENV, STRICT_JWT_SECRET
+      database/db.repo.ts          # pool, DDL batch, refreshCache (mapping + queue repair), seedDatabase
+      middleware/auth.middleware.ts# authenticateJWT, authorizeRoles, isRoleAuthorized + role equivalents
+      utils/ws.util.ts             # role-targeted broadcast after mutations
+      catalogue/                   # lab-catalogue, meds-catalogue, eye-catalogue, pricing-review, backfill (server-owned prices)
       routes/<domain>/{*.routes,*.controller,*.service,*.repository,*.validator,*.constants}.ts
-        auth/ users/ patients/ encounters/ queue/ consultations/
-        lab/ pharmacy/ nursing/ admissions/ billing(payments,invoices,outstanding,discounts,pv)/
-        eye/ hr(employees,absences,recruitment,procurements)/
-        reports/ exports/ notifications/ maintenance/
-    components/<Role>View.tsx # 9 role views + shared ui/ (shadcn/radix pattern)
-    lib/routing/ utils/api.ts # apiFetch (JWT, traceId, Idempotency-Key) + useWS hook
-  migrations/NNNN_*.sql      # versioned DDL (new; replaces ad-hoc ALTERs over time)
-  tests/                     # mirror of routes (see §19)
-  scripts/{backup.sh,restore-test.sh,deploy-offline.sh,anonymise-dump.sh}
-  docs/SYSTEM_DESIGN_GUIDE.md # this file
+        auth/ users/ patients/ payments/ exports/ notifications/ hr/ nursing/ + verify-identity.routes.ts
+        (new domains: encounters/ queue/ consultations/ lab/ pharmacy/ admissions/ billing/ eye/ reports/ maintenance/ — extracted from server.ts inline handlers and split when over the size threshold)
+    components/                    # OPDRegistrationView (~245 KB), DoctorView (~247 KB), CashierView (~217 KB), LaboratoryView, PharmacyView, NursingView, EyeClinicView, HRDashboardView, UserManagementView, DashboardView + shared ui/ — extract hooks/components from 200 KB+ views on touch
+  tests/                           # mirror of routes and views (see testing strategy)
+  scripts/                         # backup, restore-test, offline-deploy, dump-anonymise (NEW — extract from guide snippets)
+  docs/SYSTEM_DESIGN_GUIDE.md      # this file
 ```
 
-Keep React 18/TS/Tailwind/Vite, `lucide-react`, `recharts`, `xlsx` (client preview only; canonical Excel from server), `motion`. Add: `zod` (validation), `helmet`, `express-rate-limit`, `bcrypt` (already), `jsonwebtoken`.
+Keep React 19 / TypeScript / Tailwind 4 / Vite 6, `lucide-react`, `recharts`, `xlsx` (client preview only; canonical Excel from the server), `motion`, `pg`, `ws`, `jsonwebtoken`, `bcrypt`. Add: `helmet`, `express-rate-limit`, `zod` (validators). There is no migration runner by design — schema evolves through the idempotent DDL batch in `db.repo.ts`; a versioned `migrations/` directory is parked as a future option, not committed now.
 
 ---
 
-## 18. Phased build roadmap (MVP first, 2 devs)
+## 18. Phased build roadmap (minimum viable product first, 2 developers)
 
-| Phase (weeks [ASSUMPTION]) | Scope (roles/workflows) | Exit criteria |
-|---|---|---|
-| P0 Harden (1–2) | Secrets/TLS/CORS/validators/`SELECT *` ban, kobo migration, audit+health, backup-verify script | NetGuide smoke + pen-check of C7 fixes pass |
-| P1 MVP Core (4–6) | Auth + OPD(register/return/emergency+maternity stub) + Cashier(pending/outstanding/receipts) + Doctor(consult+lab/pharm orders) + WS notify + invoices/payments/outstanding | Regular OPD + Emergency end-to-end on PG; 120-visit day simulated |
-| P2 Lab+Pharmacy loop (3–4) | Walk-in lab, results→doctor, dispense+stock decrement, catalogue admin | Lab turnaround + stock accuracy tested |
-| P3 Inpatient (4–5) | Admissions/beds/detention, nursing care loop, discharge billing (C3-correct), maternity ward/delivery | Admission→discharge with instalments tested |
-| P4 Money governance (2–3) | Discount auto-apply (C2), PV/free-treatment registers, Account reports + server Excel, procurement review | Discount/procure E2E + audit register balanced |
-| P5 Eye+HR (3–4) | Unified eye billing (C4), employees/absences/recruitment/docs, wards census polish | All 9 roles live; UAT signed |
-| P6 Harden & handover (2) | Restore-drills, UPS pull-test, paper-fallback print pack, runbooks, DPO/retention sign-off | Go-live checklist + RTO/RPO posted |
+Estimates in weeks are [ASSUMPTION]. Developer split throughout: Developer A owns backend, billing, and state machines; Developer B owns SPA views and WebSocket UI; they swap review on each pull request. No phase starts with an open illegal-transition report or an unbalanced-kobo report. Every phase ends with `bun run lint` (zero new errors), `bun run build` where frontend changed, and the `bun run dev` smoke sequence.
 
-Dev split: Dev-A backend+billing/state-machines; Dev-B SPA+WS per role; swap review each PR. No phase starts with open `422 STATE` or unbalanced-kobo reports.
+### Build Phase — Security hardening and kobo foundation (weeks 1–2)
+
+- **Scope:** secrets to environment/files, LAN TLS, CORS allowlist, whitelist validators on all writes, explicit column lists, `*_kobo` migration for money fields, audit + health endpoints verified, backup-and-verify script, `package.json` scripts migrated from `tsx`/`node` to Bun.
+- **Backend contract delivered:** `POST /v1/auth/login` + `GET /v1/health` + `GET /v1/db-test` documented with request/response/errors; authorisation helper behaviour (including the intentional audited bypass) documented.
+- **Frontend consumer:** login via `apiFetch`; session + `zmc-logout` handling; no hardcoded origins.
+- **Exit gate:** NetGuide smoke matrix passes plus a penetration check of the insecure-pattern fixes; lint shows zero new errors.
+
+### Build Phase — Minimum viable product core: outpatient, cashier, doctor (weeks 3–8)
+
+- **Scope:** authentication for all roles; outpatient registration/returning/emergency (+ maternity stub); Cashier pending/outstanding/receipts; Doctor consultation with lab/pharmacy orders; invoice/payment/outstanding tables; WebSocket notify across the loop.
+- **Backend contract delivered:** patients, encounters, queue, invoices, payments, outstanding, consultations, lab/pharmacy order endpoints with the `{success,data}` envelope and the error catalogue.
+- **Frontend consumer:** Outpatient, Cashier, and Doctor views on `apiFetch` + `socketManager`; navigation maps extended and kept in sync; aliases preserved.
+- **Exit gate:** regular outpatient + emergency flows run end-to-end on PostgreSQL; a simulated 120-visit day passes; balance reconciliation shows zero unexplained kobo.
+
+### Build Phase — Laboratory and pharmacy loop (weeks 9–12)
+
+- **Scope:** walk-in lab registration, results back to doctor, dispense with transactional stock decrement, catalogue administration, pricing-review queue UI.
+- **Backend contract delivered:** walk-in registration (atomic patient + encounter + invoice), lab start/results, dispense with `409` on short stock, catalogue reads.
+- **Frontend consumer:** Laboratory and Pharmacy views with role-targeted refresh on broadcast events.
+- **Exit gate:** lab turnaround and stock accuracy tests pass; unknown-code orders land in pricing review (never silently priced).
+
+### Build Phase — Inpatient: admissions, nursing, discharge, maternity ward (weeks 13–17)
+
+- **Scope:** admissions with transactional bed assignment, detention, nursing daily-care loop (vitals, medications, observations, charges), discharge billing with absorption links (never `Paid`), maternity ward and delivery records.
+- **Backend contract delivered:** recommend/assign-bed/detain/care-posts/request-discharge/settle endpoints; `DISCH-` invoice computation documented line by line.
+- **Frontend consumer:** Nursing and Doctor admitted views; bed census; discharge-bill preview.
+- **Exit gate:** admission → discharge with instalments tested; bed double-booking returns `409`; absorbed lines assert never-`Paid`.
+
+### Build Phase — Money governance: discounts, Payment Vitae, reports, procurement (weeks 18–20)
+
+- **Scope:** automatic discount application on HR approval (see the discount-effect conflict resolution), Payment Vitae and free-treatment registers, Account revenue/outstanding/discount/procurement reports with server-generated Excel, procurement review flow.
+- **Backend contract delivered:** discount request/approve/reject (approval creates the immutable application row + recompute + broadcast); PV CRUD with delete guard; report + export endpoints.
+- **Frontend consumer:** Cashier discount tab with live preview; HR discount cards; Account report views with export.
+- **Exit gate:** discount and procurement flows run end-to-end; the audit register balances to the kobo.
+
+### Build Phase — Eye clinic and human resources (weeks 21–24)
+
+- **Scope:** unified eye billing through standard invoices (see the eye-money conflict resolution), employees/absences/recruitment/documents, ward census polish; all 9 operational roles live.
+- **Backend contract delivered:** eye registration/consultation/orders; HR CRUD + document metadata + procurement decisions.
+- **Frontend consumer:** Eye Clinic and HR views; document upload metadata; role landing tabs verified per `getDefaultTabForUser`.
+- **Exit gate:** all 9 roles pass UAT sign-off; navigation maps fully in sync.
+
+### Build Phase — Hardening and handover (weeks 25–26)
+
+- **Scope:** monthly restore drill timed against RTO, UPS pull test, paper-fallback print pack, runbooks (deploy, backup, incident, DPO), retention sign-off, dependency CVE check.
+- **Exit gate:** go-live checklist complete with RTO/RPO posted in the ward runbook; auditor verdict recorded (Pass, Pass With Notes, or Blocked — Blocked stops go-live).
 
 ---
 
 ## 19. Testing strategy
 
-- **Unit (bun/vitest):** kobo math (`formatKobo`, totals−paid=balance), state-machine guards (illegal transition table), validators (whitelist bodies, unknown-code 422), catalogue pricing snapshots. Target ≥80% on billing/authZ.
-- **API/integration (supertest + ephemeral PG):** per §6 matrix — register→pay→consult→lab→pay→result→prescribe→pay→dispense→complete; emergency ack-vs-paid; discount approve recompute; discharge absorb-link (assert no `Paid` on absorbed rows); bed double-book `409`; stock-short `409`; idempotent payment retry same receipt.
-- **WS:** AUTH/expire/reconnect-unread replay; role-targeting (cashier event invisible to HR socket).
-- **E2E (Playwright, staging):** all 9 logins, OPD→Cashier→Doctor→Lab→Pharmacy happy path, admission→discharge with partials, discount approve/reject visibility, Excel export totals match DB.
-- **Data:** migration dry-run diffs (row counts + kobo reconciliation = 0 unexplained); anonymised-dump pipeline test (no PHI leak via regex sweep).
-- **Resilience:** kill server mid-payment → assert single commit; UPS pull → graceful halt log; restore-drill monthly (timed RTO).
-- **A11y/perf:** keyboard-only cashier flow, focus-trap modals, `aria-live` payment confirm; p95 API <300 ms LAN, SPA first-load <2 s cached [ASSUMPTION targets].
+- **Lint gate (`bun run lint` = `bunx tsc --noEmit`):** zero NEW errors against the ~30-error baseline (known items: Cashier view card fields, Doctor specialised-directory maternity/emergency fields, Doctor view icon/setter types, outpatient registration snake-versus-camel fields, returning-patient outstanding balance). Fix by aligning `types.ts` with the backend mapping, never with `any`. Block release on any new error.
+- **Build gate (`bun run build`):** required for every frontend change — the Vite build must pass.
+- **Smoke gate (`bun run dev` → `http://localhost:3000`):** login per role with the correct default tab, `/api/health` OK, WebSocket connects (`AUTH_SUCCESS`, no reconnect loop), outpatient→Cashier sync visible, one notification received end-to-end.
+- **Unit tests (Bun test runner):** kobo maths (`formatKobo`, total − paid = balance), state-machine guards (illegal-transition table), validators (whitelist bodies, unknown-code `422`), catalogue pricing snapshots. Target ≥ 80% on billing and authorisation code.
+- **API and integration tests (supertest + ephemeral PostgreSQL):** per the endpoint matrix — register → pay → consult → lab → pay → result → prescribe → pay → dispense → complete; emergency acknowledge-versus-paid; discount approval recompute; discharge absorb-link (assert absorbed rows are never `Paid`); bed double-book `409`; stock-short `409`; idempotent payment retry returns the same receipt; `patient_id` + `encounter_id` linkage rejection.
+- **WebSocket tests:** authentication/expiry/reconnect with unread replay; role targeting (a cashier event is invisible to an HR socket); `AUTH_EXPIRED` clears the session via `zmc-logout`.
+- **End-to-end tests (Playwright, staging):** all 9 role logins, outpatient→Cashier→Doctor→Lab→Pharmacy happy path, admission→discharge with partials, discount approve/reject visibility at Cashier, Excel export totals matching the database.
+- **Contract tests:** every backend path/method/schema equals its frontend `apiFetch` call; error envelope `{success:false, error}` handled; `401` routes to `zmc-logout`; tab/path/navigation maps in sync with aliases preserved; `refreshCache` mapping covers every new column; queue-repair SQL still correct after schema edits.
+- **Data tests:** migration dry-run diffs (row counts + kobo reconciliation = zero unexplained); anonymised-dump pipeline test (no PHI leak via pattern sweep).
+- **Resilience tests:** kill the server mid-payment → assert a single commit; UPS pull → graceful-halt log; monthly restore drill with timed RTO.
+- **Accessibility and performance:** keyboard-only cashier flow, focus-trapped modals, `aria-live` payment confirmations, visible focus rings, WCAG 2.2 labels; API p95 under 300 ms on LAN, SPA first load under 2 seconds cached [ASSUMPTION targets].
+- **Audit verdict:** Pass, Pass With Notes, or Blocked with file, line, fix, and residual risk. Never approve with new lint errors, an unauthenticated PHI route, or an un-audited destructive operation.
 
 ---
 
 ## 20. Known weaknesses, scaling path, technical debt, risks, open questions, next iteration
 
 ### 20.1 Known weaknesses (as-built → design fix)
-1. Trust-model login, Reset-Demo to all, client-side prices/status — fixed by P0/P1 (server authZ + catalogue + guards).
-2. Eye/nursing side-ledgers unlinked; discharge `Paid`-absorption destroys audit — fixed by unification + `AbsorbedIntoDischarge` (§4, §10).
-3. Manual discount application; dual lab prices ambiguous — fixed by auto-apply + explicit SKUs.
-4. No TLS, `SELECT *`, dynamic SQL, secrets in docs — banned (§11).
+1. Trust-model login, Reset Demo available to all, client-side prices/status — fixed by the hardening and MVP core phases (server authorisation + catalogue + guards).
+2. Eye/nursing side-ledgers unlinked; discharge `Paid`-absorption destroys audit — fixed by unification + `AbsorbedIntoDischarge` (see data model and billing logic sections).
+3. Manual discount application; dual lab prices ambiguous — fixed by automatic application + explicit SKUs.
+4. No TLS, `SELECT *`, dynamic SQL, secrets in docs — banned (see security section). Legacy plaintext seed passwords — migrated on write.
 
 ### 20.2 Scaling path (no rewrite until triggers)
-Single server handles 120/day comfortably. Scale triggers: sustained CPU >70%, PG >300 GB, or second site. Path: read-replica on backup node → split WS/API processes → LAN NAS for attachments → (only then) second site with async logical replication. DICOM/PACS = separate server from day one if approved.
+Single server handles 120 visits/day comfortably. Scale triggers: sustained CPU over 70%, database over 300 GB, or a second site. Path: read-replica on the backup node → split WebSocket/API processes → LAN NAS for attachments → (only then) a second site with async logical replication. DICOM/PACS gets a separate server from day one if approved.
 
 ### 20.3 Technical debt register
-DDL-in-code `ALTER … IF NOT EXISTS` → versioned `migrations/`; `refreshCache` full-table pull → paginated + scoped queries; client `xlsx`/seed/localStorage paths → retired post-M5; dual `amount`/`amount_paid` spellings in `types.ts` → kobo-only DTOs.
+DDL-in-code ALTERs accumulate in `db.repo.ts` (acceptable by design; extract a versioned directory only when outgrown); `refreshCache` full-table pull → paginated + scoped queries with new indexes; client workbook/seed/localStorage paths → retired after the decommission phase; dual `amount`/`amount_paid` spellings in `types.ts` → kobo-only DTOs; inline `server.ts` maintenance/audit handlers → extracted modules; oversize backend routes and 200 KB+ views → split on touch.
 
-### 20.4 Risks (ranked)
-1. **Power/server loss without tested restore** (likelihood H, impact H) — mitigate: monthly drill + USB rotation + paper pack.
-2. **Billing leakage (partials/discounts/discharge)** (M/H) — mitigate: kobo triggers + reconciliation report + Account monthly audit.
-3. **Single-server SPOF** (M/H) — accept with posted RTO/RPO + spares; revisit at trigger thresholds.
-4. **PHI on USB/paper** (M/H) — encryption + chain-of-custody log + minimisation.
-5. **Scope creep (DICOM/portal/HMO)** (M/M) — park in Suggested Additions; change-control only.
-6. **After-hours/dual-price ambiguity causing cashier disputes** (M/M) — explicit SKUs + flags now; policy sign-off pre-go-live.
+### 20.4 Risks (ranked by likelihood × impact)
+1. **Power/server loss without a tested restore** (High likelihood, High impact) — mitigate: monthly drill + USB rotation + paper pack.
+2. **Billing leakage (partials/discounts/discharge)** (Medium likelihood, High impact) — mitigate: kobo triggers + reconciliation report + Account monthly audit.
+3. **Single-server single point of failure** (Medium likelihood, High impact) — accept with posted RTO/RPO + spares; revisit at trigger thresholds.
+4. **PHI on USB/paper** (Medium likelihood, High impact) — encryption + chain-of-custody log + minimisation.
+5. **Scope creep (DICOM/portal/HMO)** (Medium likelihood, Medium impact) — park in Suggested Additions; change-control only.
+6. **After-hours/dual-price ambiguity causing cashier disputes** (Medium likelihood, Medium impact) — explicit SKUs + flags now; policy sign-off pre-go-live.
 
 ### 20.5 Open questions (need owner + date before go-live)
-1. Card+consult bundling always, or exemptions (staff/under-5/revisit)? Owner: Medical Director.
+1. Card + consultation bundling always, or exemptions (staff/under-5/revisit)? Owner: Medical Director.
 2. Discharge partial — release with balance or hold until settled? Owner: Management/Account.
-3. After-hours meaning + any surcharge? LFT/SEUC which price when? Owner: Lab + Management (C8/C9).
-4. Retention years for clinical vs audit vs HR; DPO appointee; breach-notification owner. Owner: Legal/HR [VERIFY NDPC specifics].
-5. Bed count/ward names + detention billing rule (observation charged?). Owner: Nursing.
+3. After-hours meaning and any surcharge? Which LFT/SEUC price applies when? (See the after-hours and dual-price conflicts.) Owner: Lab + Management.
+4. Retention years for clinical versus audit versus HR; Data Protection Officer appointee; breach-notification owner. Owner: Legal/HR [VERIFY Commission specifics].
+5. Bed count/ward names + detention billing rule (is observation charged?). Owner: Nursing.
 6. UPS runtime under full load; second locked room for backup NAS/USB safe. Owner: IT/Facilities [VERIFY].
 
 ### 20.6 Next iteration
-P0 kickoff: secret/TLS/validator sweep + kobo + migration M0/M1. Deliverable: staging PG with Auth+Patients+Encounters+Queue and green smoke matrix. Then P1 MVP per §18.
+Hardening-phase kickoff: secret/TLS/validator sweep + kobo migration + the freeze/inventory and authentication migration phases. Deliverable: staging PostgreSQL with authentication + patients + encounters + queue and a green smoke matrix. Then the MVP core phase per the roadmap above.
 
 ### Suggested Additions (out-of-source ideas, not committed)
-Prescription print, DICOM/PACS server, patient SMS (needs internet exception), HMO module, biometric dedupe, interaction checker, appointment portal, SAN/NAS expansion beyond 5 yr, read-replica reporting.
+Prescription printing, DICOM/PACS server, patient SMS (needs an internet exception), HMO module, biometric dedupe, interaction checker, appointment portal, SAN/NAS expansion beyond 5 years, read-replica reporting.
 
 ---
 
 ## Self-check (pre-final verification)
 
-- Every Flow workflow has a state machine (§8.1–8.8: regular, emergency, maternity, walk-in, admission/discharge, discount, procurement, eye + payment/outstanding embedded in §10). ✅
-- Every role has permissions (§7: 9 operational + `it_admin`; all resources covered; `—` explicit). ✅
-- Every Spec screen maps to API (§6.1 table: Login, OPD tabs, Cashier tabs, Doctor tabs, Lab, Pharmacy, Nursing, Eye, Account, HR). ✅
-- Every entity used (§4 tables each referenced in §6/§8; catalogue/review/queue included). ✅
-- No contradictions (§1 conflicts resolved with winners; kobo/enums/names consistent; insecure patterns banned with fix notes; PHI never in logs). ✅
-- All assumptions listed (§1.1 + inline `[ASSUMPTION]`); unverified facts marked `[VERIFY]`. ✅
+- Every Flow workflow has a state machine (regular, emergency, maternity, walk-in, admission/discharge/detention, discount, procurement, eye + payment/outstanding embedded in billing logic). ✅
+- Every role has permissions (9 operational + `it_admin`; all resources covered; denials explicit). ✅
+- Every Spec screen maps to API endpoints (Login, outpatient tabs, Cashier tabs, Doctor tabs, Lab, Pharmacy, Nursing, Eye, Account, HR). ✅
+- Every entity is used (all tables referenced in API design or state machines; catalogue/review/queue included). ✅
+- No contradictions (conflicts resolved with winners; kobo/enums/names consistent; insecure patterns banned with fix notes; PHI never in logs; Bun-only commands; single-origin architecture throughout). ✅
+- All assumptions listed (assumptions subsection + inline `[ASSUMPTION]`); unverified facts marked `[VERIFY]`. ✅
+- No abbreviated plan labels (descriptive titles throughout; HTTP codes like `401`/`409`/`422` and likelihood words are not plan labels). ✅
 
-*Definition of done met: a developer can start P0/P1 without clarifying questions — open items are policy/legal with named owners in §20.5, not build blockers.*
+*Definition of done met: a developer can start the hardening phase without clarifying questions — `bun run lint` clean for touched areas, `bun run dev` smoke on `http://localhost:3000`, no secrets committed, audit rows written for PHI mutations. Open items are policy/legal with named owners in the open-questions list, not build blockers.*
