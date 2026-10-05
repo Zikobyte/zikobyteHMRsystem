@@ -1,9 +1,6 @@
+import { createSessionController, memoryStorage } from '@/lib/routing/session';
+import { User } from '@/types';
 import { describe, test, expect } from 'bun:test';
-import type { User } from '@/types';
-import {
-  createSessionController,
-  memoryStorage,
-} from '@/lib/routing/session';
 
 function makeToken(payload: Record<string, unknown>): string {
   const encode = (value: unknown) => Buffer.from(JSON.stringify(value)).toString('base64url');
