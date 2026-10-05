@@ -1,0 +1,427 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"/><title>ZMC Intranet Setup Guide</title><style>*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:Arial,sans-serif;color:#1a1a2e;background:#fff;font-size:13px;line-height:1.6}
+.cover{background:linear-gradient(135deg,#0f172a,#1e3a8a);color:white;padding:60px 50px}
+.cover h1{font-size:28px;margin-bottom:8px}
+.cover h2{font-size:15px;opacity:.8;margin-bottom:12px}
+.cover p{font-size:11px;opacity:.6}
+.bar{background:#1e293b;color:#93c5fd;padding:12px 50px;font-size:12px;display:flex;gap:24px;flex-wrap:wrap}
+.content{padding:40px 50px}
+h2{font-size:16px;color:#1e3a8a;border-bottom:2px solid #1e3a8a;padding-bottom:6px;margin:32px 0 14px}
+h3{font-size:14px;color:#374151;margin:18px 0 8px;font-weight:bold}
+h4{font-size:13px;color:#374151;margin:14px 0 6px;font-weight:bold}
+p{margin-bottom:8px;color:#374151}
+table{width:100%;border-collapse:collapse;margin:12px 0;font-size:12px}
+th{background:#1e3a8a;color:white;padding:8px 10px;text-align:left}
+td{padding:7px 10px;border-bottom:1px solid #e5e7eb;vertical-align:top}
+tr:nth-child(even) td{background:#f9fafb}
+pre{background:#111827;color:#4ade80;font-size:11px;padding:14px;border-radius:6px;overflow-x:auto;white-space:pre-wrap;word-break:break-word;margin:8px 0;font-family:monospace;line-height:1.5}
+.note{border-left:4px solid #3b82f6;background:#eff6ff;padding:10px 14px;border-radius:0 6px 6px 0;margin:10px 0;font-size:12px;color:#1e40af}
+.warn{border-left:4px solid #f59e0b;background:#fffbeb;padding:10px 14px;border-radius:0 6px 6px 0;margin:10px 0;font-size:12px;color:#92400e}
+.step{display:flex;gap:14px;margin-bottom:16px;align-items:flex-start}
+.num{background:#1e3a8a;color:white;min-width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:bold;font-size:12px;text-align:center;line-height:26px}
+.step-body{flex:1}
+.step-title{font-weight:bold;margin-bottom:4px;color:#111827}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin:14px 0}
+.card{border:1px solid #e5e7eb;border-radius:8px;padding:14px}
+.card ul{padding-left:16px;font-size:12px;color:#374151;line-height:1.9}
+footer{text-align:center;font-size:10px;color:#9ca3af;border-top:1px solid #e5e7eb;padding:20px;margin-top:30px}</style></head><body><div class="cover"><h1>ZMC Hospital — Intranet Network Setup Guide</h1><h2>Connecting All Departments via In-House Server | No Internet Required</h2><p>Prepared: June 17, 2026 | Version 1.0 | ZMC IT Department | CONFIDENTIAL</p></div><div class="bar"><span>9 Department Laptops</span><span>1 Central Server</span><span>Zero Internet Required</span><span>Real-Time WebSocket Notifications</span><span>JWT + bcrypt Security</span><span>PostgreSQL Database</span></div><div class="content"><h2>SECTION 1 — Overview &amp; Network Architecture</h2><p>ZMC's intranet solution connects all department laptops through a single central server inside the hospital. No internet is required. Each department opens the EHR in their browser at <strong>http://192.168.1.1</strong>.</p><h3>Department IP Address Map</h3><table><thead><tr><th>Department</th><th>Static IP</th><th>Hostname</th><th>Role</th></tr></thead><tbody><tr><td><strong>OPD / Registration</strong></td><td style="font-family:monospace;color:#1d4ed8">192.168.1.10</td><td style="font-family:monospace">LAPTOP-OPD</td><td>Patient registration, triage, card issuance</td></tr><tr><td><strong>Doctor / Consultation</strong></td><td style="font-family:monospace;color:#1d4ed8">192.168.1.11</td><td style="font-family:monospace">LAPTOP-DOC</td><td>Clinical notes, prescriptions, lab orders</td></tr><tr><td><strong>Nursing Station</strong></td><td style="font-family:monospace;color:#1d4ed8">192.168.1.12</td><td style="font-family:monospace">LAPTOP-NURSE</td><td>Inpatient care, vitals, medication admin</td></tr><tr><td><strong>Laboratory</strong></td><td style="font-family:monospace;color:#1d4ed8">192.168.1.13</td><td style="font-family:monospace">LAPTOP-LAB</td><td>Lab tests, result entry, LIMS</td></tr><tr><td><strong>Pharmacy</strong></td><td style="font-family:monospace;color:#1d4ed8">192.168.1.14</td><td style="font-family:monospace">LAPTOP-PHARM</td><td>Drug dispensing, stock management</td></tr><tr><td><strong>Cashier / Billing</strong></td><td style="font-family:monospace;color:#1d4ed8">192.168.1.15</td><td style="font-family:monospace">LAPTOP-CASH</td><td>Payments, receipts, billing records</td></tr><tr><td><strong>Accounts Office</strong></td><td style="font-family:monospace;color:#1d4ed8">192.168.1.16</td><td style="font-family:monospace">LAPTOP-ACCT</td><td>Financial reports, revenue tracking</td></tr><tr><td><strong>HR Department</strong></td><td style="font-family:monospace;color:#1d4ed8">192.168.1.17</td><td style="font-family:monospace">LAPTOP-HR</td><td>Staff records, payroll, recruitment</td></tr><tr><td><strong>Eye Clinic</strong></td><td style="font-family:monospace;color:#1d4ed8">192.168.1.18</td><td style="font-family:monospace">LAPTOP-EYE</td><td>Eye consultations, prescriptions</td></tr><tr><td><strong>Server (ZMC Central)</strong></td><td style="font-family:monospace;color:#1d4ed8">192.168.1.1</td><td style="font-family:monospace">ZMC-SERVER</td><td>Central app server, DB, file storage, WebSocket hub</td></tr></tbody></table><h2>SECTION 2 — Hardware Requirements</h2><div class="grid2"><div class="card"><h4>ZMC Central Server</h4><ul><li>CPU: Intel Core i7 / Xeon E (8+ cores)</li><li>RAM: 16 GB DDR4 min (32 GB recommended)</li><li>Storage: 2x 1TB SSD RAID 1 + 4x 2TB HDD RAID 5</li><li>UPS: APC Smart-UPS 1500VA</li><li>OS: Ubuntu Server 22.04 LTS</li></ul></div><div class="card"><h4>Network Equipment</h4><ul><li>Switch: TP-Link TL-SG1016D (16-port Gigabit)</li><li>Cables: CAT6 Ethernet to each department</li><li>Patch panel + RJ45 wall plates per room</li><li>Wi-Fi AP: TP-Link EAP225 (mobile/tablet)</li></ul></div></div><h2>SECTION 3 — Server OS Installation (Ubuntu Server 22.04)</h2><div class="note">Flash Ubuntu Server 22.04 ISO to USB using Rufus or Balena Etcher. Boot from USB on the server and follow installation wizard.</div><div class="step"><div class="num">1</div><div class="step-body"><div class="step-title">Update the system after first boot</div><pre>sudo apt update &amp;&amp; sudo apt upgrade -y
+sudo apt install -y curl wget git unzip net-tools htop ufw</pre></div></div><div class="step"><div class="num">2</div><div class="step-body"><div class="step-title">Set static IP address (192.168.1.1)</div><pre>sudo nano /etc/netplan/00-installer-config.yaml</pre><pre># Replace the file contents with this:
+network:
+  version: 2
+  ethernets:
+    eth0:                          # Replace with your interface name
+      dhcp4: no
+      addresses:
+        - 192.168.1.1/24           # Server static IP
+      gateway4: 192.168.1.254      # Your router/gateway IP
+      nameservers:
+        addresses: [8.8.8.8]</pre><pre>sudo netplan apply
+ip addr show eth0</pre></div></div><div class="step"><div class="num">3</div><div class="step-body"><div class="step-title">Configure UFW firewall</div><pre>sudo ufw allow 22/tcp    # SSH remote management
+sudo ufw allow 80/tcp    # Web app (HTTP)
+sudo ufw allow 443/tcp   # Web app (HTTPS)
+sudo ufw allow 3001/tcp  # WebSocket notifications
+sudo ufw allow from 192.168.1.0/24 to any port 5432  # PostgreSQL LAN only
+sudo ufw enable
+sudo ufw status</pre></div></div><h2>SECTION 4 — Database Setup (PostgreSQL)</h2><div class="step"><div class="num">1</div><div class="step-body"><div class="step-title">Install PostgreSQL</div><pre>sudo apt install -y postgresql postgresql-contrib
+sudo systemctl start postgresql
+sudo systemctl enable postgresql
+sudo systemctl status postgresql</pre></div></div><div class="step"><div class="num">2</div><div class="step-body"><div class="step-title">Create ZMC database and user</div><pre>sudo -i -u postgres
+psql
+
+-- Inside psql, run these SQL commands:
+CREATE DATABASE zmc_ehr;
+CREATE USER zmcapp WITH ENCRYPTED PASSWORD 'ZMC@Secure2024!';
+GRANT ALL PRIVILEGES ON DATABASE zmc_ehr TO zmcapp;
+\q
+
+exit</pre></div></div><div class="step"><div class="num">3</div><div class="step-body"><div class="step-title">Allow LAN connections</div><pre># Find this line and change it:
+listen_addresses = 'localhost'
+# Change to:
+listen_addresses = '192.168.1.1'   # Only listen on intranet IP</pre><pre># Add this line at the bottom of pg_hba.conf:
+host    zmc_ehr    zmcapp    192.168.1.0/24    md5
+# This allows any laptop on 192.168.1.x to connect</pre><pre>sudo systemctl restart postgresql</pre></div></div><h2>SECTION 5 — Web Application Server (Node.js + Nginx)</h2><div class="step"><div class="num">1</div><div class="step-body"><div class="step-title">Install Node.js v20 and PM2</div><pre>curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+sudo apt install -y nodejs
+node --version    # Should show v20.x.x
+npm --version
+sudo npm install -g pm2</pre></div></div><div class="step"><div class="num">2</div><div class="step-body"><div class="step-title">Install and configure Nginx</div><pre>sudo apt install -y nginx
+sudo systemctl start nginx
+sudo systemctl enable nginx</pre><pre>server {
+    listen 80;
+    server_name 192.168.1.1 zmc-server;
+
+    # Serve the built React application
+    root /var/www/zmc-ehr;
+    index index.html;
+
+    # React Router — all routes go to index.html
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    # Proxy API requests to Node.js backend
+    location /api/ {
+        proxy_pass http://localhost:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_cache_bypass $http_upgrade;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+
+    # Proxy WebSocket connections for real-time notifications
+    location /ws {
+        proxy_pass http://localhost:3001;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "Upgrade";
+        proxy_set_header Host $host;
+        proxy_read_timeout 86400;
+    }
+
+    client_max_body_size 50M;
+    gzip on;
+    gzip_types text/plain application/json application/javascript text/css;
+}</pre><pre>sudo ln -s /etc/nginx/sites-available/zmc-ehr /etc/nginx/sites-enabled/
+sudo rm /etc/nginx/sites-enabled/default
+sudo nginx -t
+sudo systemctl reload nginx</pre></div></div><div class="step"><div class="num">3</div><div class="step-body"><div class="step-title">Deploy the React EHR application</div><pre>sudo mkdir -p /var/www/zmc-ehr
+
+# Build on dev machine:  pnpm run build
+# Copy via USB drive:
+sudo cp -r /media/usb/zmc-build/* /var/www/zmc-ehr/
+
+# OR via SCP from dev machine:
+scp -r dist/* zmcadmin@192.168.1.1:/var/www/zmc-ehr/
+
+sudo chown -R www-data:www-data /var/www/zmc-ehr
+sudo chmod -R 755 /var/www/zmc-ehr</pre></div></div><div class="step"><div class="num">4</div><div class="step-body"><div class="step-title">Create and start the Node.js backend</div><pre>mkdir -p /home/zmcadmin/zmc-backend
+cd /home/zmcadmin/zmc-backend
+npm init -y
+npm install express pg bcrypt jsonwebtoken ws cors dotenv</pre><pre># /home/zmcadmin/zmc-backend/.env
+DB_HOST=192.168.1.1
+DB_PORT=5432
+DB_NAME=zmc_ehr
+DB_USER=zmcapp
+DB_PASSWORD=ZMC@Secure2024!
+JWT_SECRET=ZMCHospitalSecretKey2024!
+API_PORT=3000
+WS_PORT=3001
+NODE_ENV=production</pre><pre>// /home/zmcadmin/zmc-backend/server.js
+const express   = require('express');
+const { Pool }  = require('pg');
+const WebSocket = require('ws');
+const cors      = require('cors');
+const jwt       = require('jsonwebtoken');
+require('dotenv').config();
+
+const app = express();
+app.use(express.json());
+app.use(cors({ origin: 'http://192.168.1.1' }));
+
+// PostgreSQL connection pool
+const db = new Pool({
+  host:     process.env.DB_HOST,
+  port:     process.env.DB_PORT,
+  database: process.env.DB_NAME,
+  user:     process.env.DB_USER,
+  password: process.env.DB_PASSWORD,
+  max: 20,
+});
+
+db.query('SELECT NOW()', (err, res) =&gt; {
+  if (err) console.error('DB error:', err);
+  else console.log('DB connected:', res.rows[0].now);
+});
+
+// --- LOGIN ---
+app.post('/api/login', async (req, res) =&gt; {
+  const { username, password } = req.body;
+  try {
+    const r = await db.query('SELECT * FROM users WHERE username = $1', [username]);
+    if (!r.rows.length) return res.status(401).json({ error: 'Invalid credentials' });
+    const user  = r.rows[0];
+    const valid = await require('bcrypt').compare(password, user.password_hash);
+    if (!valid) return res.status(401).json({ error: 'Invalid credentials' });
+    const token = jwt.sign(
+      { id: user.id, username: user.username, role: user.role },
+      process.env.JWT_SECRET,
+      { expiresIn: '8h' }
+    );
+    res.json({ token, role: user.role, username: user.username });
+  } catch (e) { res.status(500).json({ error: 'Server error' }); }
+});
+
+// --- PATIENTS ---
+app.get('/api/patients', auth, async (req, res) =&gt; {
+  const r = await db.query('SELECT * FROM patients ORDER BY registration_date DESC');
+  res.json(r.rows);
+});
+
+app.post('/api/patients', auth, async (req, res) =&gt; {
+  const p = req.body;
+  const r = await db.query(
+    'INSERT INTO patients (name,date_of_birth,gender,phone_number,status,registered_by)'
+    + ' VALUES ($1,$2,$3,$4,$5,$6) RETURNING *',
+    [p.name, p.dateOfBirth, p.gender, p.phoneNumber, 'registered', req.user.username]
+  );
+  broadcast({ type: 'NEW_PATIENT', patient: r.rows[0] });
+  res.json(r.rows[0]);
+});
+
+app.patch('/api/patients/:id', auth, async (req, res) =&gt; {
+  const updates = req.body;
+  const fields  = Object.keys(updates).map((k, i) =&gt; k + ' = $' + (i+2)).join(', ');
+  const values  = [req.params.id, ...Object.values(updates)];
+  const r = await db.query(
+    'UPDATE patients SET ' + fields + ', updated_at = NOW() WHERE id = $1 RETURNING *',
+    values
+  );
+  broadcast({ type: 'PATIENT_UPDATED', patient: r.rows[0] });
+  res.json(r.rows[0]);
+});
+
+// --- NOTIFICATIONS ---
+app.post('/api/notify', auth, async (req, res) =&gt; {
+  const { targetRole, message, patientId, type } = req.body;
+  await db.query(
+    'INSERT INTO notifications (from_role,target_role,message,patient_id,type) VALUES ($1,$2,$3,$4,$5)',
+    [req.user.role, targetRole, message, patientId, type]
+  );
+  broadcast({ type: 'NOTIFICATION', targetRole, message, patientId, from: req.user.role });
+  res.json({ success: true });
+});
+
+// --- AUTH MIDDLEWARE ---
+function auth(req, res, next) {
+  const token = (req.headers.authorization || '').split(' ')[1];
+  if (!token) return res.status(401).json({ error: 'No token' });
+  try { req.user = jwt.verify(token, process.env.JWT_SECRET); next(); }
+  catch { res.status(401).json({ error: 'Invalid token' }); }
+}
+
+app.listen(process.env.API_PORT, () =&gt; console.log('API running on ' + process.env.API_PORT));
+
+// --- WEBSOCKET SERVER ---
+const wss     = new WebSocket.Server({ port: process.env.WS_PORT });
+const clients = new Map();
+
+wss.on('connection', ws =&gt; {
+  ws.on('message', msg =&gt; {
+    try {
+      const d = JSON.parse(msg);
+      if (d.type === 'AUTH') {
+        const u = jwt.verify(d.token, process.env.JWT_SECRET);
+        clients.set(ws, { role: u.role, username: u.username });
+      }
+    } catch (e) { ws.close(); }
+  });
+  ws.on('close', () =&gt; clients.delete(ws));
+});
+
+function broadcast(msg) {
+  const json = JSON.stringify(msg);
+  wss.clients.forEach(client =&gt; {
+    if (client.readyState !== WebSocket.OPEN) return;
+    const info = clients.get(client);
+    if (!msg.targetRole || !info || info.role === msg.targetRole)
+      client.send(json);
+  });
+}
+
+console.log('WebSocket server running on ' + process.env.WS_PORT);</pre><pre>pm2 start server.js --name "zmc-backend"
+pm2 startup   # Follow the printed command to auto-start on boot
+pm2 save
+
+pm2 status
+pm2 logs zmc-backend</pre></div></div><h2>SECTION 6 — Configuring Each Department Laptop</h2><div class="note">No software installation needed on laptops beyond a web browser. Repeat on every department laptop.</div><div class="step"><div class="num">1</div><div class="step-body"><div class="step-title">Connect via CAT6 Ethernet to the switch</div><p>Plug one end into the laptop port and the other into the network switch. Use a USB-to-Ethernet adapter if needed.</p></div></div><div class="step"><div class="num">2</div><div class="step-body"><div class="step-title">Set static IP (Windows): Settings &rarr; Network &rarr; Ethernet &rarr; Edit &rarr; Manual IPv4</div><p>IP: [see table] | Subnet: 255.255.255.0 | Gateway: 192.168.1.1 | DNS: 192.168.1.1</p></div></div><div class="step"><div class="num">3</div><div class="step-body"><div class="step-title">Set static IP (Linux)</div><pre>network:
+  version: 2
+  ethernets:
+    eth0:
+      dhcp4: no
+      addresses:
+        - 192.168.1.10/24      # Change for each department
+      gateway4: 192.168.1.1
+      nameservers:
+        addresses: [192.168.1.1]</pre></div></div><div class="step"><div class="num">4</div><div class="step-body"><div class="step-title">Test connection and bookmark</div><pre># Open Command Prompt (Windows) or Terminal (Linux/Mac)
+ping 192.168.1.1
+
+# Expected:
+# Reply from 192.168.1.1: bytes=32 time&lt;1ms TTL=64</pre><p>Open Chrome &rarr; http://192.168.1.1 &rarr; Ctrl+D to bookmark as "ZMC Hospital System"</p></div></div><h2>SECTION 7 — Real-Time Notifications (WebSocket)</h2><p>When OPD sends a patient to the Doctor, the Doctor screen updates instantly without a page refresh. WebSocket connections run entirely over the hospital intranet.</p><h3>Notification Routing Table</h3><table><thead><tr><th>From</th><th>Action</th><th>Notifies</th><th>Message</th></tr></thead><tbody><tr><td style="color:#1d4ed8"><strong>OPD</strong></td><td>Patient registered & sent</td><td style="color:#15803d"><strong>Cashier</strong></td><td>New patient pending consultation payment</td></tr><tr><td style="color:#1d4ed8"><strong>Cashier</strong></td><td>Consultation payment confirmed</td><td style="color:#15803d"><strong>Doctor</strong></td><td>Patient ready for consultation</td></tr><tr><td style="color:#1d4ed8"><strong>Doctor</strong></td><td>Lab tests ordered</td><td style="color:#15803d"><strong>Cashier</strong></td><td>Patient has lab tests pending payment</td></tr><tr><td style="color:#1d4ed8"><strong>Cashier</strong></td><td>Lab payment confirmed</td><td style="color:#15803d"><strong>Laboratory</strong></td><td>New lab tests ready to process</td></tr><tr><td style="color:#1d4ed8"><strong>Lab</strong></td><td>Results entered</td><td style="color:#15803d"><strong>Doctor</strong></td><td>Lab results available for patient</td></tr><tr><td style="color:#1d4ed8"><strong>Doctor</strong></td><td>Prescription written</td><td style="color:#15803d"><strong>Cashier</strong></td><td>Patient has pharmacy items pending payment</td></tr><tr><td style="color:#1d4ed8"><strong>Cashier</strong></td><td>Pharmacy payment confirmed</td><td style="color:#15803d"><strong>Pharmacy</strong></td><td>Dispense medications for patient</td></tr><tr><td style="color:#1d4ed8"><strong>Pharmacy</strong></td><td>Medications dispensed</td><td style="color:#15803d"><strong>Doctor/Nurse</strong></td><td>Medications dispensed — patient ready</td></tr><tr><td style="color:#1d4ed8"><strong>Doctor</strong></td><td>Admission ordered</td><td style="color:#15803d"><strong>Nurse</strong></td><td>Patient admitted to ward — bed assignment needed</td></tr><tr><td style="color:#1d4ed8"><strong>Nurse</strong></td><td>Discharge approved</td><td style="color:#15803d"><strong>Cashier</strong></td><td>Inpatient ready for final billing</td></tr></tbody></table><h3>WebSocket Hook (React)</h3><pre>// src/hooks/useIntranetConnection.ts
+import { useEffect, useRef, useCallback } from 'react';
+
+const SERVER_WS = 'ws://192.168.1.1/ws';
+
+export function useIntranetConnection(
+  token: string,
+  role: string,
+  onMessage: (msg: any) =&gt; void
+) {
+  const ws             = useRef&lt;WebSocket | null&gt;(null);
+  const reconnectTimer = useRef&lt;ReturnType&lt;typeof setTimeout&gt;&gt;();
+
+  const connect = useCallback(() =&gt; {
+    ws.current = new WebSocket(SERVER_WS);
+
+    ws.current.onopen = () =&gt; {
+      console.log('Connected to ZMC intranet server');
+      ws.current?.send(JSON.stringify({ type: 'AUTH', token }));
+    };
+
+    ws.current.onmessage = (event) =&gt; {
+      const data = JSON.parse(event.data);
+      onMessage(data);
+    };
+
+    ws.current.onclose = () =&gt; {
+      console.log('Disconnected — retrying in 3 seconds...');
+      reconnectTimer.current = setTimeout(connect, 3000);
+    };
+  }, [token, onMessage]);
+
+  useEffect(() =&gt; {
+    connect();
+    return () =&gt; {
+      clearTimeout(reconnectTimer.current);
+      ws.current?.close();
+    };
+  }, [connect]);
+
+  const sendNotification = useCallback(
+    (targetRole: string, message: string, patientId?: string) =&gt; {
+      fetch('http://192.168.1.1/api/notify', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ' + token,
+        },
+        body: JSON.stringify({ targetRole, message, patientId, type: 'PATIENT_FLOW' }),
+      });
+    },
+    [token]
+  );
+
+  return { sendNotification };
+}</pre><h3>Sending (OPD to Doctor)</h3><pre>// In OPDInterface.tsx — send patient to doctor
+const { sendNotification } = useIntranetConnection(token, 'opd', handleMessage);
+
+const sendToDoctor = async (patient: Patient) =&gt; {
+  await fetch('http://192.168.1.1/api/patients/' + patient.id, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer ' + token,
+    },
+    body: JSON.stringify({ status: 'waiting_doctor' }),
+  });
+  sendNotification(
+    'doctor',
+    'New patient: ' + patient.name + ' is ready for consultation',
+    patient.id
+  );
+};</pre><h3>Receiving (Doctor screen)</h3><pre>// In DoctorInterface.tsx — receiving notifications
+const handleMessage = (msg: any) =&gt; {
+  if (msg.type === 'PATIENT_UPDATED' || msg.type === 'NOTIFICATION') {
+    fetchPatients();
+    showToast('Notification: ' + msg.message);
+    new Audio('/notification.mp3').play().catch(() =&gt; {});
+  }
+};
+
+useIntranetConnection(token, 'doctor', handleMessage);</pre><h2>SECTION 8 — Connecting React App to Intranet Server</h2><h3>Central API Config</h3><pre>// src/config/api.ts
+export const API_BASE = 'http://192.168.1.1/api';
+export const WS_URL   = 'ws://192.168.1.1/ws';
+
+export async function apiRequest(path: string, options: RequestInit = {}): Promise&lt;any&gt; {
+  const token = localStorage.getItem('zmc_token');
+  const res = await fetch(API_BASE + path, {
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: 'Bearer ' + token } : {}),
+      ...options.headers,
+    },
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}</pre><h3>Replace localStorage with API calls</h3><pre>// BEFORE (localStorage — only works on one laptop):
+const savedPatients = localStorage.getItem('hospital_patients');
+setPatients(savedPatients ? JSON.parse(savedPatients) : SEED_PATIENTS);
+
+// AFTER (intranet API — works across ALL departments):
+import { apiRequest } from '../config/api';
+
+useEffect(() =&gt; {
+  apiRequest('/patients')
+    .then(data =&gt; setPatients(data))
+    .catch(err =&gt; console.error('Failed to load patients:', err));
+}, []);
+
+// Adding a new patient:
+const addPatient = async (patient: Omit&lt;Patient, 'id'&gt;) =&gt; {
+  const saved = await apiRequest('/patients', {
+    method: 'POST',
+    body: JSON.stringify(patient),
+  });
+  setPatients(prev =&gt; [saved, ...prev]);
+};
+
+// Updating a patient:
+const updatePatient = async (id: string, updates: Partial&lt;Patient&gt;) =&gt; {
+  const updated = await apiRequest('/patients/' + id, {
+    method: 'PATCH',
+    body: JSON.stringify(updates),
+  });
+  setPatients(prev =&gt; prev.map(p =&gt; p.id === id ? updated : p));
+};</pre><h3>Login via server</h3><pre>// src/components/LoginScreen.tsx — update login handler
+import { API_BASE } from '../config/api';
+
+const handleLogin = async (username: string, password: string) =&gt; {
+  try {
+    const res = await fetch(API_BASE + '/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password }),
+    });
+    if (!res.ok) throw new Error('Invalid credentials');
+    const { token, role } = await res.json();
+    localStorage.setItem('zmc_token', token);
+    onLogin({ username, role });
+  } catch (err) {
+    setError('Invalid username or password');
+  }
+};</pre><h2>SECTION 9 — Security &amp; Automated Backups</h2><div class="grid2"><div class="card"><h4>Network Security</h4><ul><li>Intranet physically isolated — no internet uplink</li><li>UFW firewall: only ports 80, 443, 22, 3001 open</li><li>PostgreSQL: only 192.168.1.x range allowed</li><li>Server in locked room</li></ul></div><div class="card"><h4>Application Security</h4><ul><li>JWT tokens expire after 8 hours</li><li>Passwords hashed with bcrypt</li><li>Role-based access per module</li><li>All actions logged with timestamp + username</li></ul></div></div><h3>Daily Automated Backup (2:00 AM)</h3><pre>#!/bin/bash
+# ZMC Daily Database Backup
+DATE=$(date +%Y-%m-%d)
+BACKUP_DIR="/mnt/backup/zmc-ehr"
+mkdir -p $BACKUP_DIR
+
+PGPASSWORD="ZMC@Secure2024!" pg_dump -U zmcapp -h 192.168.1.1 zmc_ehr \
+  | gzip &gt; "$BACKUP_DIR/zmc_ehr_$DATE.sql.gz"
+
+# Keep only the last 30 days
+find $BACKUP_DIR -name "*.sql.gz" -mtime +30 -delete
+echo "Backup completed: zmc_ehr_$DATE.sql.gz"</pre><pre>chmod +x /home/zmcadmin/backup.sh
+crontab -e
+# Add this line to run at 2:00 AM daily:
+0 2 * * * /home/zmcadmin/backup.sh &gt;&gt; /var/log/zmc-backup.log 2&gt;&amp;1</pre><h2>SECTION 10 — Testing &amp; Troubleshooting</h2><table><thead><tr><th>Test</th><th>Method</th><th>Expected Result</th></tr></thead><tbody><tr><td>Server reachable</td><td>ping 192.168.1.1 from any laptop</td><td>Reply with &lt;1ms</td></tr><tr><td>Web app loads</td><td>Open http://192.168.1.1</td><td>ZMC login page appears</td></tr><tr><td>All roles login</td><td>Login as each department role</td><td>Correct dashboard per role</td></tr><tr><td>Cross-dept sync</td><td>Register patient on OPD, check Cashier</td><td>Patient visible immediately</td></tr><tr><td>Real-time notification</td><td>Send patient OPD to Cashier</td><td>Notification on Cashier instantly</td></tr><tr><td>Backup</td><td>Run backup.sh manually</td><td>.sql.gz file created in /mnt/backup</td></tr></tbody></table><h3>Common Issues</h3><table><thead><tr><th>Problem</th><th>Fix</th></tr></thead><tbody><tr><td>"Site can't be reached"</td><td>ping 192.168.1.1 &rarr; check cable &rarr; sudo systemctl status nginx</td></tr><tr><td>"Network error" on login</td><td>pm2 status &rarr; pm2 restart zmc-backend &rarr; pm2 logs</td></tr><tr><td>Notifications not arriving</td><td>Check F12 console for WebSocket errors, restart browser</td></tr><tr><td>Data not syncing</td><td>Log out and log back in (JWT token may have expired)</td></tr><tr><td>Server slow</td><td>SSH: htop (CPU/RAM) &rarr; df -h (disk) &rarr; pm2 restart all</td></tr></tbody></table></div><footer>ZMC Hospital EHR — Intranet Setup Guide v1.0 | June 17, 2026 | Confidential — ZMC IT Department</footer></body></html>
