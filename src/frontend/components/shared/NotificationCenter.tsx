@@ -1,7 +1,7 @@
-import React, { useEffect, useState } from 'react';
-import { socketManager } from '../utils/api';
-import { Bell, X, Info, Zap, AlertCircle } from 'lucide-react';
-import { motion, AnimatePresence } from 'motion/react';
+import { AlertCircle, Info, X, Zap } from 'lucide-react';
+import { AnimatePresence, motion } from 'motion/react';
+import { useEffect, useState } from 'react';
+import { socketManager } from '@/utils/api';
 
 interface Toast {
   id: string;
@@ -21,7 +21,7 @@ export default function NotificationCenter() {
     // Subscribe to central WebSocket events
     const unsubscribe = socketManager.subscribe((msg: any) => {
       console.log('Notification center received:', msg);
-      
+
       // We handle relevant realtime notifications
       if (
         msg.type === 'PATIENT_REGISTERED' ||
@@ -47,7 +47,7 @@ export default function NotificationCenter() {
 
         // Add to toast overlays
         setToasts(prev => [newToast, ...prev].slice(0, 5));
-        
+
         // Add to persistent notification drawer history
         setHistory(prev => [newToast, ...prev].slice(0, 50));
 
@@ -58,7 +58,7 @@ export default function NotificationCenter() {
           const gain = audioCtx.createGain();
           osc.connect(gain);
           gain.connect(audioCtx.destination);
-          
+
           osc.frequency.setValueAtTime(587.33, audioCtx.currentTime); // D5
           gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
           osc.start();
@@ -115,9 +115,9 @@ export default function NotificationCenter() {
             >
               {/* Highlight Bar */}
               <div className="absolute left-0 top-0 bottom-0 w-1 bg-emerald-400" />
-              
+
               <div className="shrink-0 mt-0.5">{getIcon(toast.type)}</div>
-              
+
               <div className="flex-1 min-w-0 pr-4">
                 <p className="text-xs font-mono text-slate-400 uppercase tracking-wider flex justify-between">
                   <span>{toast.type.replace('_', ' ')}</span>
