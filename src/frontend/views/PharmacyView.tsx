@@ -1,12 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { apiFetch, socketManager } from '../utils/api';
-import type { User } from '../types';
-import { 
-  Pill, 
-  Search, 
-  Clock, 
-  CheckCircle2, 
-  AlertCircle, 
+import { apiFetch, socketManager } from '@/utils/api';
+import type { User } from '@/types';
+import {
+  Pill,
+  Search,
+  Clock,
+  CheckCircle2,
+  AlertCircle,
   User as UserIcon,
   Loader2,
   RefreshCw,
@@ -489,7 +489,7 @@ export default function PharmacyView({ activeTab: parentActiveTab, onTabChange, 
       'PRESCRIBED MEDICATIONS:',
       'Medication Name                   Qty      Price (NGN)',
       '----------------------------------------------------------',
-      ...patient.prescribedMeds.map(m => 
+      ...patient.prescribedMeds.map(m =>
         `${m.name.padEnd(32)} ${m.quantity.toString().padEnd(8)} ₦${m.price.toLocaleString()}`
       ),
       '----------------------------------------------------------',
@@ -659,7 +659,7 @@ export default function PharmacyView({ activeTab: parentActiveTab, onTabChange, 
 
   return (
     <div className="space-y-6" id="pharmacy_department_root">
-      
+
       {/* 1. TOP DEPARTMENT HEADER & SUB-NAVIGATION TABS */}
       <div className="bg-white p-5 md:p-6 rounded-3xl border border-slate-100 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
@@ -711,7 +711,7 @@ export default function PharmacyView({ activeTab: parentActiveTab, onTabChange, 
       {/* ========================================================================= */}
       {activeTab === 'dispensing' && (
         <div className="space-y-6">
-          
+
           {/* Header Summary Bar */}
           <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-xs flex items-center justify-between">
             <div className="flex items-center gap-3">
@@ -756,7 +756,7 @@ export default function PharmacyView({ activeTab: parentActiveTab, onTabChange, 
 
           {/* Grid Layout: Left Queue vs Right Patient Info */}
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-            
+
             {/* Left Column: Pending Prescriptions Queue */}
             <div className="lg:col-span-5 bg-white p-5 rounded-2xl border border-slate-100 shadow-xs space-y-4">
               <h3 className="text-xs font-extrabold text-slate-400 uppercase tracking-wider font-mono flex items-center justify-between">
@@ -823,7 +823,7 @@ export default function PharmacyView({ activeTab: parentActiveTab, onTabChange, 
                 selectedPatient.paymentStatus === 'PAID' ? (
                   /* ONLY Patients That Have Paid Display Information On This Page */
                   <div className="space-y-6">
-                    
+
                     {/* Patient Header Box */}
                     <div className="border-b border-slate-100 pb-4">
                       <h2 className="text-lg font-black text-slate-900">{selectedPatient.patientName}</h2>
@@ -1055,7 +1055,7 @@ export default function PharmacyView({ activeTab: parentActiveTab, onTabChange, 
       {/* ========================================================================= */}
       {activeTab === 'procurement' && (
         <div className="space-y-6">
-          
+
           {procurementSuccess && (
             <div className="bg-emerald-50 border border-emerald-200 p-4 rounded-2xl text-xs text-emerald-800 font-medium flex items-center gap-2">
               <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0" />
@@ -1074,7 +1074,7 @@ export default function PharmacyView({ activeTab: parentActiveTab, onTabChange, 
           )}
 
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-            
+
             {/* Left Column: Request Medication Procurement Form */}
             <div className="lg:col-span-7 bg-white p-6 rounded-2xl border border-slate-100 shadow-xs space-y-6">
               <div>
@@ -1247,7 +1247,7 @@ export default function PharmacyView({ activeTab: parentActiveTab, onTabChange, 
       {/* ========================================================================= */}
       {activeTab === 'stock' && (
         <div className="space-y-6">
-          
+
           {/* Receive New Stock Form Box */}
           <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-xs space-y-4">
             <div>

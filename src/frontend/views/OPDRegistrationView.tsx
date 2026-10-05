@@ -2,19 +2,19 @@ import React, { useState, useEffect } from 'react';
 import { jsPDF } from 'jspdf';
 import { apiFetch } from '../utils/api';
 import { Patient, Vitals, MaternityDetails, EmergencyDetails } from '../types';
-import { 
-  HeartHandshake, 
-  Plus, 
-  Search, 
-  Calendar, 
-  Phone, 
-  Activity, 
-  User, 
-  Shield, 
-  AlertCircle, 
-  CheckCircle2, 
-  X, 
-  PlusCircle, 
+import {
+  HeartHandshake,
+  Plus,
+  Search,
+  Calendar,
+  Phone,
+  Activity,
+  User,
+  Shield,
+  AlertCircle,
+  CheckCircle2,
+  X,
+  PlusCircle,
   CreditCard,
   Clock,
   Settings,
@@ -40,10 +40,10 @@ import {
   Sparkles
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import ExportButton from './ExportButton';
+import ExportButton from '@/components/common/ExportButton';
 import ReturningPatientView from './ReturningPatientView';
-import AdmissionsView from './AdmissionsView';
-import PatientDetailModal from './PatientDetailModal';
+import AdmissionsView from '@/components/AdmissionsView';
+import PatientDetailModal from "@/components/PatientDetailModal";
 
 interface OPDRegistrationViewProps {
   activeTab?: string;
@@ -51,7 +51,7 @@ interface OPDRegistrationViewProps {
   onRegisterModalClose?: () => void;
 }
 
-export default function OPDRegistrationView({ 
+export default function OPDRegistrationView({
   activeTab,
   initialOpenRegister,
   onRegisterModalClose
@@ -381,7 +381,7 @@ export default function OPDRegistrationView({
   const getCalculatedCardFee = (): number => {
     if (cardType === 'Standard' || cardType === 'Eye Clinic') return 3000;
     if (cardType === 'Maternity') return 5000;
-    
+
     let total = 0; // Emergency Base
     if (isSickEmergency) total += 25000;
     if (isUnbookedLabour) total += 50000;
@@ -407,7 +407,7 @@ export default function OPDRegistrationView({
     setDesignation('');
     setLetterReference('');
     setLetterVerified(false);
-    
+
     // Maternity reset
     setGravida('');
     setPara('');
@@ -505,8 +505,8 @@ export default function OPDRegistrationView({
       }
 
       // Check duplicate against active patients list immediately as an extra hard safeguard
-      const localDup = patients.find(p => 
-        (p.name && p.name.trim().toLowerCase() === trimmedName.toLowerCase()) || 
+      const localDup = patients.find(p =>
+        (p.name && p.name.trim().toLowerCase() === trimmedName.toLowerCase()) ||
         (phoneNumber && p.phoneNumber && p.phoneNumber.trim() !== '' && p.phoneNumber.trim() !== 'Unknown' && p.phoneNumber.replace(/\D/g, '') === phoneNumber.replace(/\D/g, ''))
       );
       if (localDup) {
@@ -1234,7 +1234,7 @@ export default function OPDRegistrationView({
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(16);
       doc.text('ZIKORA MEDICAL CENTER', cardX + cardW / 2, cardY + 11, { align: 'center' });
-      
+
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(9);
       doc.text(isMatPage ? 'OFFICIAL MATERNITY CLINICAL CARD' : 'OFFICIAL PATIENT REGISTRY CARD', cardX + cardW / 2, cardY + 18, { align: 'center' });
@@ -1338,7 +1338,7 @@ export default function OPDRegistrationView({
       // Status block across full width
       doc.setFillColor(isMatPage ? 253 : 248, isMatPage ? 242 : 250, isMatPage ? 248 : 252);
       doc.roundedRect(cardX + 15, startFieldY + 28, cardW - 30, 12, 2, 2, 'F');
-      
+
       doc.setTextColor(100, 116, 139);
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(8);
@@ -1448,7 +1448,7 @@ export default function OPDRegistrationView({
           <p class="title">Zikora Medical Center</p>
           <p class="subtitle">Official Patient Registry Database Report</p>
         </div>
-        
+
         <table class="meta-info" style="width: 100%; margin-bottom: 15px;">
           <tr>
             <td><strong>Export Date:</strong> ${new Date().toLocaleString()}</td>
@@ -1484,7 +1484,7 @@ export default function OPDRegistrationView({
             </tbody>
           </table>
         </div>
-        
+
         <p style="margin-top: 40px; font-size: 10px; text-align: center; color: #94a3b8; border-top: 1px solid #e2e8f0; padding-top: 10px;">
           This is an official document generated from the Zikora Medical Center Out-Patient Department. Confidentiality of patient medical records is protected by clinical policy.
         </p>
@@ -1943,16 +1943,16 @@ export default function OPDRegistrationView({
             {isHeaderDownloadOpen && (
               <>
                 {/* Backdrop to close dropdown */}
-                <div 
-                  className="fixed inset-0 z-10" 
+                <div
+                  className="fixed inset-0 z-10"
                   onClick={() => setIsHeaderDownloadOpen(false)}
                 />
-                
+
                 <div className="absolute right-0 mt-2 w-56 bg-white border border-slate-100 rounded-2xl shadow-xl z-20 py-1.5 overflow-hidden">
                   <div className="px-3.5 py-2 border-b border-slate-50 bg-slate-50/50">
                     <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider font-mono">Download Data ({filteredPatients.length} rows)</p>
                   </div>
-                  
+
                   <button
                     onClick={() => {
                       handleDownloadExcel();
@@ -2390,10 +2390,10 @@ export default function OPDRegistrationView({
                       }`}>
                         <td className="p-2.5">
                           <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold ${
-                            isEmergency 
-                              ? 'bg-rose-100 text-rose-800 border border-rose-200 animate-pulse' 
-                              : isUrgent 
-                                ? 'bg-amber-100 text-amber-800 border border-amber-200' 
+                            isEmergency
+                              ? 'bg-rose-100 text-rose-800 border border-rose-200 animate-pulse'
+                              : isUrgent
+                                ? 'bg-amber-100 text-amber-800 border border-amber-200'
                                 : 'bg-slate-100 text-slate-700'
                           }`}>
                             {item.priority}
@@ -2473,7 +2473,7 @@ export default function OPDRegistrationView({
                 </div>
                 <div className="text-[11px] text-slate-200 space-y-2 leading-relaxed font-medium">
                   <p>
-                    Immediate, unbooked admissions for trauma, complications, or acute illness. 
+                    Immediate, unbooked admissions for trauma, complications, or acute illness.
                     After-hours doctors are on-call <strong>(6:00 PM – 8:00 AM)</strong>.
                   </p>
                   <div className="bg-rose-500/10 border border-rose-500/20 rounded-xl p-3 space-y-1.5 font-mono text-rose-200">
@@ -2572,7 +2572,7 @@ export default function OPDRegistrationView({
                 <h2 className="text-base font-bold text-slate-900 font-sans">Clinical Pricing Catalog</h2>
                 <p className="text-xs text-slate-500 font-medium font-sans">Dynamic, verified prices synced with live PostgreSQL database records</p>
               </div>
-              <button 
+              <button
                 onClick={fetchPrices}
                 className="p-2 hover:bg-slate-50 rounded-xl border border-slate-100 text-slate-500 transition-all cursor-pointer"
                 title="Sync from Database"
@@ -2602,7 +2602,7 @@ export default function OPDRegistrationView({
 
                     <div className="flex justify-between items-center mt-4 pt-3 border-t border-slate-100">
                       <span className="text-xs font-mono font-black text-slate-950">₦{parseFloat(item.price).toLocaleString()}</span>
-                      
+
                       {['Administrator', 'Management'].includes(currentUser?.role) && (
                         <button
                           onClick={() => handleOpenPriceEdit(item)}
@@ -2830,7 +2830,7 @@ export default function OPDRegistrationView({
                         </span>
                       </div>
                       <p className="text-[11px] leading-relaxed text-rose-800">
-                        The system found {duplicatesFound.length} existing patient record(s) matching this Name or Phone Number. 
+                        The system found {duplicatesFound.length} existing patient record(s) matching this Name or Phone Number.
                         <strong>Duplicate patient registration is blocked</strong> to avoid splitting medical records. Please click below to open the existing file.
                       </p>
                       <div className="space-y-2 bg-white/90 p-3 rounded-xl border border-rose-200">
@@ -2928,7 +2928,7 @@ export default function OPDRegistrationView({
 
                         <div className="space-y-4 pt-2">
                           <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider font-mono">2. Demographics & Card Info</h4>
-                          
+
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div>
                               <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-1.5">
@@ -4040,10 +4040,10 @@ export default function OPDRegistrationView({
 
               {/* Grid content */}
               <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
-                
+
                 {/* Left Column: Patient Profile & Card Downloads */}
                 <div className="md:col-span-7 space-y-4">
-                  
+
                   {/* Image-Style Alert Card */}
                   <div className="bg-[#1C1613] text-[#F3E8E2] p-5 rounded-2xl shadow-lg border border-neutral-800 space-y-3 font-sans">
                     <p className="text-sm font-bold tracking-wide">
@@ -4056,7 +4056,7 @@ export default function OPDRegistrationView({
                       Please direct patient to <strong className="text-white underline decoration-wavy decoration-[#E6C5B3] underline-offset-4">CASHIER</strong> for payment.
                     </p>
                     <div className="flex justify-end pt-1">
-                      <span 
+                      <span
                         onClick={() => {
                           setSuccessCheckedReceipt(true);
                         }}
@@ -4071,7 +4071,7 @@ export default function OPDRegistrationView({
                     <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 font-mono">
                       Registered Profile Summary
                     </h4>
-                    
+
                     <div className="space-y-2">
                       <div className="flex justify-between text-xs">
                         <span className="text-slate-500">Patient Name:</span>
@@ -4152,7 +4152,7 @@ export default function OPDRegistrationView({
                       </div>
 
                       <p className="text-[11px] text-pink-700/80 mb-3 leading-relaxed">
-                        Temporary Obstetric/Antenatal file card. Cost: <strong>₦2,000 NGN</strong>. Expires immediately upon delivery. 
+                        Temporary Obstetric/Antenatal file card. Cost: <strong>₦2,000 NGN</strong>. Expires immediately upon delivery.
                         Non-maternity clinical visits require Standard ID card.
                       </p>
 

@@ -1,30 +1,30 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { apiFetch } from '../utils/api';
-import { User, UserRole } from '../types';
+import { apiFetch } from '@/utils/api';
+import { User, UserRole } from '../../types';
 import PatientDirectoryImportView from './PatientDirectoryImportView';
-import { 
-  Users, 
-  Plus, 
-  Shield, 
-  Search, 
-  Trash2, 
-  Key, 
-  UserCheck, 
-  UserX, 
-  AlertCircle, 
-  CheckCircle2, 
-  UserPlus, 
-  X, 
-  Activity, 
-  Settings, 
-  Database, 
-  RefreshCw, 
-  Download, 
-  Server, 
-  Check, 
-  Lock, 
-  Clock, 
-  Eye, 
+import {
+  Users,
+  Plus,
+  Shield,
+  Search,
+  Trash2,
+  Key,
+  UserCheck,
+  UserX,
+  AlertCircle,
+  CheckCircle2,
+  UserPlus,
+  X,
+  Activity,
+  Settings,
+  Database,
+  RefreshCw,
+  Download,
+  Server,
+  Check,
+  Lock,
+  Clock,
+  Eye,
   EyeOff,
   Sliders,
   HardDrive,
@@ -539,7 +539,7 @@ export default function UserManagementView({
   const filteredLogs = useMemo(() => {
     return auditLogs.filter((l) => {
       const q = logSearch.toLowerCase();
-      const matchesSearch = 
+      const matchesSearch =
         (l.user_name || '').toLowerCase().includes(q) ||
         (l.user_id || '').toLowerCase().includes(q) ||
         (l.user_role || '').toLowerCase().includes(q) ||

@@ -1,51 +1,39 @@
-import React, { useState, useEffect } from 'react';
-import { removeAuthToken, socketManager, apiFetch } from '../utils/api';
-import { User } from '../types';
 import { getAllowedNavigationIds } from "@/lib/routing/navigation";
 import {
-  Shield,
-  LogOut,
-  Users,
-  HeartHandshake,
-  Search,
-  Bell,
-  Settings,
-  Maximize,
-  LayoutDashboard,
-  ChevronDown,
-  Menu,
-  UserCheck,
-  BookOpen,
-  Folder,
-  Compass,
-  HelpCircle,
-  FileText,
-  Activity,
-  Sparkles,
-  X,
-  Info,
-  CheckCheck,
-  Eye,
-  Coins,
-  FlaskConical,
-  Pill,
-  BedDouble,
-  ClipboardList,
-  ChevronRight,
-  CheckCircle,
-  CheckCircle2,
-  AlertTriangle,
-  Receipt,
-  Stethoscope,
-  ShoppingBag,
-  Boxes,
-  FileSpreadsheet,
-  CreditCard,
-  Percent,
-  Syringe,
-  Baby
+    Activity,
+    AlertTriangle,
+    Baby,
+    BedDouble,
+    Boxes,
+    CheckCircle,
+    CheckCircle2,
+    ChevronDown,
+    ClipboardList,
+    Coins,
+    CreditCard,
+    Eye,
+    FileSpreadsheet,
+    FileText,
+    FlaskConical,
+    HeartHandshake,
+    LayoutDashboard,
+    LogOut,
+    Menu,
+    Percent,
+    Pill,
+    Receipt,
+    Search,
+    Settings,
+    ShoppingBag,
+    Stethoscope,
+    Syringe,
+    UserCheck,
+    Users
 } from 'lucide-react';
-import { motion, AnimatePresence } from 'motion/react';
+import { AnimatePresence, motion } from 'motion/react';
+import React, { useEffect, useState } from 'react';
+import { User } from '../../types';
+import { apiFetch, removeAuthToken, socketManager } from '@/utils/api';
 
 interface DashboardLayoutProps {
   user: User;

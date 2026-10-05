@@ -1,26 +1,17 @@
-import React, { useState, useEffect } from 'react';
-import { 
-  BedDouble, 
-  Activity, 
-  Pill, 
-  Syringe, 
-  Search, 
-  Plus, 
-  Filter, 
-  Calendar, 
-  User, 
-  Clock, 
-  FileText, 
-  CheckCircle2, 
-  AlertCircle,
-  RefreshCw,
-  Sparkles
+import AdmittedPatientsView from '@/views/nursing/AdmittedPatientsView';
+import DetainedPatientsView from '@/views/nursing/DetainedPatientsView';
+import InjectionRecordsView from '@/views/nursing/InjectionRecordsView';
+import NurseDispensingView from '@/views/nursing/NurseDispensingView';
+import {
+    Activity,
+    BedDouble,
+    CheckCircle2,
+    Pill,
+    Plus,
+    Search,
+    Syringe
 } from 'lucide-react';
-import { motion, AnimatePresence } from 'motion/react';
-import AdmittedPatientsView from './nursing/AdmittedPatientsView';
-import DetainedPatientsView from './nursing/DetainedPatientsView';
-import NurseDispensingView from './nursing/NurseDispensingView';
-import InjectionRecordsView from './nursing/InjectionRecordsView';
+import { useEffect, useState } from 'react';
 
 export type NursingSubTab = 'admitted-patients' | 'detained-patients' | 'nurse-dispensing' | 'injection-records';
 
@@ -193,7 +184,7 @@ export default function NursingView({
                 <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
                 <input
                   type="text"
-                  placeholder={`Search ${currentNav.label.toLowerCase()}...`}
+                  placeholder={`Search ${currentNav.label.toLowerCase()}@/views.`}
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   className="bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-4 py-2 text-xs font-medium text-slate-700 placeholder-slate-400 focus:outline-none focus:border-[#2A758C] focus:bg-white transition-all w-52 sm:w-64"

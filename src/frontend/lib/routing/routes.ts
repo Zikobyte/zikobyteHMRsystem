@@ -34,18 +34,18 @@ export interface RouteMatch {
 const lazyView = (importer: () => Promise<{ default: ComponentType<any> }>) =>
   React.lazy(importer);
 
-const DashboardView = lazyView(() => import('../../components/DashboardView'));
-const OPDRegistrationView = lazyView(() => import('../../components/OPDRegistrationView'));
-const NursingView = lazyView(() => import('../../components/NursingView'));
-const EyeClinicView = lazyView(() => import('../../components/EyeClinicView'));
-const DoctorView = lazyView(() => import('../../components/DoctorView'));
-const LaboratoryView = lazyView(() => import('../../components/LaboratoryView'));
-const PharmacyView = lazyView(() => import('../../components/PharmacyView'));
-const HRDashboardView = lazyView(() => import('../../components/HRDashboardView'));
-const UserManagementView = lazyView(() => import('../../components/UserManagementView'));
-const CashierView = lazyView(() => import('../../components/CashierView'));
+const DashboardView = lazyView(() => import('@/views/DashboardView'));
+const OPDRegistrationView = lazyView(() => import('@/views/OPDRegistrationView'));
+const NursingView = lazyView(() => import('@/views/NursingView'));
+const EyeClinicView = lazyView(() => import('@/views/EyeClinicView'));
+const DoctorView = lazyView(() => import('@/views/DoctorView'));
+const LaboratoryView = lazyView(() => import('@/views/LaboratoryView'));
+const PharmacyView = lazyView(() => import('@/views/PharmacyView'));
+const HRDashboardView = lazyView(() => import('@/views/HRDashboardView'));
+const UserManagementView = lazyView(() => import('@/views/UserManagementView'));
+const CashierView = lazyView(() => import('@/views/CashierView'));
 const PatientDirectoryImportView = lazyView(
-  () => import('../../components/PatientDirectoryImportView'),
+  () => import('@/views/PatientDirectoryImportView'),
 );
 
 export const ROUTE_ENTRIES: RouteEntry[] = [

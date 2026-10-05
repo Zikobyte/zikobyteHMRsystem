@@ -1,37 +1,28 @@
-import React, { useState, useEffect } from 'react';
-import { apiFetch } from '../utils/api';
-import { Patient, User } from '../types';
-import PatientDetailModal from './PatientDetailModal';
-import { 
-  ArrowUpRight, 
-  ArrowDownRight, 
-  TrendingUp, 
-  Download, 
-  Maximize2, 
-  Printer, 
-  RotateCw, 
-  Search, 
-  ChevronDown, 
-  Check, 
-  MoreVertical, 
-  Heart, 
-  Activity, 
-  UserPlus, 
-  Users, 
-  FileText, 
-  Clock, 
-  HeartHandshake,
-  CheckCircle2,
-  AlertCircle,
-  Database,
-  Server,
-  Cpu,
-  Eye,
-  ShieldCheck
+import PatientDetailModal from '@/components/PatientDetailModal';
+import { Patient, User } from '@/types';
+import {
+    Activity,
+    ArrowUpRight,
+    Check,
+    Cpu,
+    Database,
+    Eye,
+    FileText,
+    HeartHandshake,
+    Maximize2,
+    Printer,
+    RotateCw,
+    Search,
+    Server,
+    ShieldCheck,
+    TrendingUp,
+    UserPlus,
+    Users
 } from 'lucide-react';
-import { motion } from 'motion/react';
-import RevenueVerificationModal from './RevenueVerificationModal';
-import ExportButton from './ExportButton';
+import { useEffect, useState } from 'react';
+import { apiFetch } from '../utils/api';
+import ExportButton from '@/components/common/ExportButton';
+import RevenueVerificationModal from "@/components/RevenueVerificationModal";
 
 interface DashboardViewProps {
   onNavigateToPatients: () => void;
@@ -42,13 +33,13 @@ interface DashboardViewProps {
   user?: User | null;
 }
 
-export default function DashboardView({ 
-  onNavigateToPatients, 
+export default function DashboardView({
+  onNavigateToPatients,
   onNavigateToReturningPatients,
   onOpenRegisterPatient,
   onNavigateToStandardCards,
   onNavigateToSpecializedCare,
-  user 
+  user
 }: DashboardViewProps) {
   const [patients, setPatients] = useState<Patient[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -222,7 +213,7 @@ export default function DashboardView({
 
   return (
     <div className="space-y-6">
-      
+
       {/* Top Welcome Action Banner */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center bg-white p-6 rounded-3xl border border-slate-100/80 shadow-2xs gap-4">
         <div>
@@ -307,7 +298,7 @@ export default function DashboardView({
         </div>
 
         {/* KPI 2: Standard Registrations */}
-        <div 
+        <div
           onClick={onNavigateToStandardCards}
           role="button"
           tabIndex={0}
@@ -339,7 +330,7 @@ export default function DashboardView({
         </div>
 
         {/* KPI 3: Maternity & Emergency */}
-        <div 
+        <div
           onClick={onNavigateToSpecializedCare}
           role="button"
           tabIndex={0}
@@ -371,7 +362,7 @@ export default function DashboardView({
         </div>
 
         {/* KPI 4: Total Revenue & Independent Verification */}
-        <div 
+        <div
           onClick={() => setIsRevenueModalOpen(true)}
           role="button"
           tabIndex={0}
@@ -427,12 +418,12 @@ export default function DashboardView({
                 className="w-44 sm:w-56 pl-9 pr-3 py-2 text-xs font-semibold text-slate-700 bg-slate-50 border border-slate-200 rounded-xl outline-hidden focus:bg-white focus:border-[#2A758C] transition-all"
               />
             </div>
-            <ExportButton 
-              exportType="patients" 
-              label="Export Directory" 
-              className="bg-slate-100 hover:bg-slate-200 text-black border border-slate-300 font-extrabold" 
+            <ExportButton
+              exportType="patients"
+              label="Export Directory"
+              className="bg-slate-100 hover:bg-slate-200 text-black border border-slate-300 font-extrabold"
             />
-            <button 
+            <button
               onClick={onNavigateToPatients}
               className="text-xs text-slate-700 hover:text-slate-900 px-4 py-2 rounded-2xl border border-slate-200/80 hover:border-slate-300 font-extrabold transition-all flex items-center gap-1.5 cursor-pointer bg-slate-50/50 hover:bg-slate-100/80"
             >
@@ -481,8 +472,8 @@ export default function DashboardView({
                 const avatarColor = colors[index % colors.length];
 
                 return (
-                  <tr 
-                    key={item.id} 
+                  <tr
+                    key={item.id}
                     onClick={() => handlePatientClick(item)}
                     className="hover:bg-[#F0F8FA] transition-all cursor-pointer group hover:shadow-2xs"
                   >
@@ -518,7 +509,7 @@ export default function DashboardView({
                     </td>
                     <td className="py-2.5 px-4 text-right">
                       <div className="flex justify-end gap-1.5">
-                        <button 
+                        <button
                           onClick={(e) => {
                             e.stopPropagation();
                             handlePatientClick(item);
@@ -539,7 +530,7 @@ export default function DashboardView({
 
       {/* Grid Layout conforming to Power BI dashboard exactly */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        
+
         {/* CARD 1: Monthly Overview Bar Chart (Takes 2 columns on desktop) */}
         <div className="lg:col-span-2 bg-white rounded-3xl border border-slate-100/80 p-6 flex flex-col justify-between shadow-2xs">
           <div className="flex justify-between items-center mb-5">
@@ -575,8 +566,8 @@ export default function DashboardView({
             {/* Bars container */}
             <div className="relative z-10 flex-1 h-full flex items-end justify-around pl-8 pb-6">
               {overviewData.map((d, i) => (
-                <div 
-                  key={d.month} 
+                <div
+                  key={d.month}
                   className="flex flex-col items-center justify-end h-full w-12 group cursor-pointer relative"
                   onMouseEnter={() => setHoveredBar(i)}
                   onMouseLeave={() => setHoveredBar(null)}
@@ -599,19 +590,19 @@ export default function DashboardView({
                   {/* Combined bars bar-chart layout */}
                   <div className="flex items-end gap-1 h-full w-full justify-center">
                     {/* New Visitors Bar */}
-                    <div 
+                    <div
                       className="w-3.5 rounded-t-sm transition-all duration-300 group-hover:opacity-90"
-                      style={{ 
+                      style={{
                         height: `${(d.newV / 100) * 100}%`,
-                        backgroundColor: '#A3D1E0' 
+                        backgroundColor: '#A3D1E0'
                       }}
                     ></div>
                     {/* Unique Visitors Bar */}
-                    <div 
+                    <div
                       className="w-3.5 rounded-t-sm transition-all duration-300 group-hover:opacity-90"
-                      style={{ 
+                      style={{
                         height: `${(d.unique / 100) * 100}%`,
-                        backgroundColor: '#3A3F47' 
+                        backgroundColor: '#3A3F47'
                       }}
                     ></div>
                   </div>
@@ -630,7 +621,7 @@ export default function DashboardView({
         <div className="bg-gradient-to-br from-[#2A758C] to-[#1e586a] rounded-3xl p-6 text-white flex flex-col justify-between shadow-md shadow-[#2A758C]/20 relative overflow-hidden min-h-[320px]">
           {/* Subtle design pattern background */}
           <div className="absolute inset-0 bg-radial-gradient from-white/10 to-transparent pointer-events-none"></div>
-          
+
           <div className="relative z-10">
             <span className="text-xs font-black tracking-wider text-teal-200 uppercase font-mono block">
               CLINIC INTENSITY
@@ -675,16 +666,16 @@ export default function DashboardView({
             <div className="flex justify-between items-center mb-4">
               <h4 className="font-extrabold text-xs tracking-wider uppercase text-slate-300">Revenue Ledger</h4>
               <div className="flex items-center gap-2">
-                <button 
+                <button
                   onClick={() => setIsRevenueModalOpen(true)}
                   className="text-[10px] bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/30 font-extrabold px-3 py-1.5 rounded-xl transition-all flex items-center gap-1.5 cursor-pointer"
                 >
                   <ShieldCheck className="h-3 w-3" /> Audit & Verify
                 </button>
-                <ExportButton 
-                  exportType="financials" 
-                  label="Export" 
-                  className="bg-slate-100 hover:bg-slate-200 text-black border border-slate-300 font-extrabold" 
+                <ExportButton
+                  exportType="financials"
+                  label="Export"
+                  className="bg-slate-100 hover:bg-slate-200 text-black border border-slate-300 font-extrabold"
                 />
               </div>
             </div>
@@ -692,8 +683,8 @@ export default function DashboardView({
             {/* Spark bars block */}
             <div className="h-28 flex items-end justify-between gap-1.5 px-2 py-3 bg-slate-900/80 rounded-2xl mb-6 border border-[#222836]">
               {[60, 80, 45, 90, 70, 85, 50, 95, 65, 80, 55, 90].map((v, i) => (
-                <div 
-                  key={i} 
+                <div
+                  key={i}
                   className="bg-[#38bdf8] rounded-full w-full transition-all duration-300 hover:bg-white"
                   style={{ height: `${v}%` }}
                 ></div>
@@ -886,9 +877,9 @@ export default function DashboardView({
                 {deviceHover || 'Total'}
               </span>
               <span className="text-2xl font-black text-slate-900 font-mono">
-                {deviceHover === 'Standard' ? standardCount : 
-                 deviceHover === 'Maternity' ? maternityCount : 
-                 deviceHover === 'Emergency' ? emergencyCount : 
+                {deviceHover === 'Standard' ? standardCount :
+                 deviceHover === 'Maternity' ? maternityCount :
+                 deviceHover === 'Emergency' ? emergencyCount :
                  totalPatients}
               </span>
             </div>
@@ -896,7 +887,7 @@ export default function DashboardView({
 
           {/* Breakdown table with exact counts and mini colors */}
           <div className="space-y-2 pt-2 border-t border-slate-100 text-xs">
-            <div 
+            <div
               onClick={onNavigateToStandardCards}
               className="flex justify-between items-center p-1.5 rounded-xl hover:bg-sky-50 transition-colors cursor-pointer group"
             >
@@ -909,7 +900,7 @@ export default function DashboardView({
                 <span className="text-[10px] text-sky-600 font-bold opacity-0 group-hover:opacity-100 transition-opacity">View →</span>
               </div>
             </div>
-            <div 
+            <div
               onClick={onNavigateToSpecializedCare}
               className="flex justify-between items-center p-1.5 rounded-xl hover:bg-pink-50 transition-colors cursor-pointer group"
             >
@@ -922,7 +913,7 @@ export default function DashboardView({
                 <span className="text-[10px] text-pink-600 font-bold opacity-0 group-hover:opacity-100 transition-opacity">View →</span>
               </div>
             </div>
-            <div 
+            <div
               onClick={onNavigateToSpecializedCare}
               className="flex justify-between items-center p-1.5 rounded-xl hover:bg-rose-50 transition-colors cursor-pointer group"
             >
@@ -998,7 +989,7 @@ export default function DashboardView({
                 </span>
               </div>
               <p className="text-xs text-slate-500 leading-relaxed mb-4">
-                {dbStatus?.postgresActive 
+                {dbStatus?.postgresActive
                   ? 'The system is actively connected to the PostgreSQL database. All operations (patient registries, audit logs, and inventory updates) are permanently stored inside secure relational tables.'
                   : 'Critical: The system is disconnected from the PostgreSQL database. Please ensure your PostgreSQL environment variables are correctly configured in your settings panel.'
                 }

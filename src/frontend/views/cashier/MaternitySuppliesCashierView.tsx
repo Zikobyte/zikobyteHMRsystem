@@ -1,25 +1,25 @@
 import React, { useState } from 'react';
-import { 
-  Baby, 
-  Search, 
-  Filter, 
-  CheckCircle2, 
-  Clock, 
-  Receipt, 
-  Printer, 
-  X, 
-  ArrowUpRight, 
-  DollarSign, 
-  RefreshCw, 
-  User, 
-  BedDouble, 
+import {
+  Baby,
+  Search,
+  Filter,
+  CheckCircle2,
+  Clock,
+  Receipt,
+  Printer,
+  X,
+  ArrowUpRight,
+  DollarSign,
+  RefreshCw,
+  User,
+  BedDouble,
   AlertCircle,
   PackageCheck,
   Building2,
   Calendar,
   Sparkles
 } from 'lucide-react';
-import { apiFetch } from '../../utils/api';
+import { apiFetch } from '@/utils/api';
 
 export interface MaternityHandoverItem {
   id?: string;
@@ -303,7 +303,7 @@ export default function MaternitySuppliesCashierView({
                 ?? '—';
 
               return (
-                <div 
+                <div
                   key={record.id}
                   id={`maternity-handover-card-${record.id}`}
                   className="p-5 hover:bg-slate-50/70 transition-colors"
@@ -323,8 +323,8 @@ export default function MaternitySuppliesCashierView({
                           {record.ward} {record.bed ? `• ${record.bed}` : ''}
                         </span>
                         <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider border ${
-                          isPending 
-                            ? 'bg-amber-50 text-amber-800 border-amber-200 animate-pulse' 
+                          isPending
+                            ? 'bg-amber-50 text-amber-800 border-amber-200 animate-pulse'
                             : 'bg-emerald-50 text-emerald-800 border-emerald-200'
                         }`}>
                           {record.status}
@@ -551,7 +551,7 @@ export default function MaternitySuppliesCashierView({
             </div>
 
             {/* Printable Receipt Paper Container */}
-            <div 
+            <div
               id="maternity-receipt-print-area"
               className="bg-white border-2 border-dashed border-slate-200 rounded-2xl p-5 text-slate-900 space-y-4"
             >

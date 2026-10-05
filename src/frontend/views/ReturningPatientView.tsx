@@ -1,23 +1,19 @@
-import React, { useState, useEffect } from 'react';
-import { apiFetch } from '../utils/api';
-import { Patient } from '../types';
-import { 
-  Search, 
-  UserCheck, 
-  AlertTriangle, 
-  Clock, 
-  FileText, 
-  Activity, 
-  Calendar, 
-  CheckCircle2, 
-  Loader2, 
-  ArrowRight,
-  ShieldAlert,
-  CreditCard,
-  User,
-  History
+import PendingBalanceModal from '@/components/PendingBalanceModal';
+import { Patient } from '@/types';
+import { apiFetch } from '@/utils/api';
+import {
+    AlertTriangle,
+    ArrowRight,
+    CheckCircle2,
+    Clock,
+    History,
+    Loader2,
+    Search,
+    ShieldAlert,
+    User,
+    UserCheck
 } from 'lucide-react';
-import PendingBalanceModal from './PendingBalanceModal';
+import React, { useState } from 'react';
 
 interface ReturningPatientViewProps {
   userRole?: string;
@@ -29,7 +25,7 @@ export default function ReturningPatientView({ userRole = 'Receptionist', onReQu
   const [searchResults, setSearchResults] = useState<Patient[]>([]);
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
   const [history, setHistory] = useState<any | null>(null);
-  
+
   const [isLoadingSearch, setIsLoadingSearch] = useState(false);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   const [isReQueueing, setIsReQueueing] = useState(false);
@@ -101,9 +97,9 @@ export default function ReturningPatientView({ userRole = 'Receptionist', onReQu
       });
 
       if (res.success) {
-        setFeedback({ 
-          type: 'success', 
-          message: `Patient ${selectedPatient.name} (${selectedPatient.hospitalNumber}) successfully re-queued to ${destinationClinic}!` 
+        setFeedback({
+          type: 'success',
+          message: `Patient ${selectedPatient.name} (${selectedPatient.hospitalNumber}) successfully re-queued to ${destinationClinic}!`
         });
         if (onReQueueSuccess) onReQueueSuccess();
       } else {
@@ -116,8 +112,8 @@ export default function ReturningPatientView({ userRole = 'Receptionist', onReQu
     }
   };
 
-  const totalOwing = selectedPatient 
-    ? parseFloat((selectedPatient.outstandingBalance || selectedPatient.outstanding_balance || 0).toString()) 
+  const totalOwing = selectedPatient
+    ? parseFloat((selectedPatient.outstandingBalance || selectedPatient.outstanding_balance || 0).toString())
     : 0;
 
   return (

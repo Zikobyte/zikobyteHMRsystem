@@ -1,8 +1,8 @@
 import { ChangeEvent, useMemo, useRef, useState } from 'react';
 import * as XLSX from 'xlsx';
 import { AlertCircle, CheckCircle2, Download, FileSpreadsheet, FolderOpen, Table2, Upload } from 'lucide-react';
-import { apiFetch } from '../utils/api';
-import { User } from '../types';
+import { apiFetch } from '@/utils/api';
+import { User } from '@/types';
 
 // Column layout mirrors the ZMC OPD patient information table exactly, in the order used across the system.
 const ALL_COLUMNS = ['First Name', 'Last Name', 'Gender', 'Marital Status', 'Hospital Number', 'Address', 'Date of Birth', 'Card Type', 'Phone Number', 'Document Type', 'ID Document Number', 'Next of Kin', 'Next of Kin Phone', 'Relationship Status', 'Registration Date', 'Registered By'];

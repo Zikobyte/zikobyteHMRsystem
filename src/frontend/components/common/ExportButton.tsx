@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Download, Check, AlertTriangle, FileSpreadsheet, FileText, FileDown, CloudLightning, RefreshCw, X } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
-import { API_BASE, getAuthToken } from '../utils/api';
+import { API_BASE, getAuthToken } from '@/utils/api';
 
 interface ExportButtonProps {
   exportType: 'patients' | 'financials' | 'medical-records' | 'invoice' | 'receipt' | 'audit-logs';
@@ -134,18 +134,18 @@ export default function ExportButton({
       });
 
       const blob = await response.blob();
-      
+
       setProgress(100);
       setStepDescription('Document finalized! Transferring file...');
 
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      
+
       const fileExtensions = { excel: 'xlsx', word: 'docx', pdf: 'pdf' };
       const capitalizedType = exportType.charAt(0).toUpperCase() + exportType.slice(1);
       const formattedDate = new Date().toISOString().split('T')[0];
-      
+
       a.download = `ZMC_${capitalizedType}_Report_${formattedDate}.${fileExtensions[format]}`;
       document.body.appendChild(a);
       a.click();
