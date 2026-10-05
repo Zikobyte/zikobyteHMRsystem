@@ -1,6 +1,6 @@
 import React from 'react';
 import type { ComponentType, LazyExoticComponent } from 'react';
-import type { User } from '../../types';
+import type { User } from '@/types';
 import { isNavigationAllowed } from './navigation';
 
 export type DepartmentKey =

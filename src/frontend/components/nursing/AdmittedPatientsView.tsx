@@ -1,34 +1,34 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  BedDouble, 
-  Search, 
-  User, 
-  Phone, 
-  Calendar, 
-  Clock, 
-  FileText, 
-  Pill, 
-  Activity, 
-  Receipt, 
-  ClipboardList, 
-  CheckCircle2, 
-  AlertCircle, 
-  Plus, 
-  Check, 
-  ChevronRight, 
-  Heart, 
-  Thermometer, 
-  Wind, 
-  Droplet, 
-  RefreshCw, 
-  X, 
-  Filter, 
+import {
+  BedDouble,
+  Search,
+  User,
+  Phone,
+  Calendar,
+  Clock,
+  FileText,
+  Pill,
+  Activity,
+  Receipt,
+  ClipboardList,
+  CheckCircle2,
+  AlertCircle,
+  Plus,
+  Check,
+  ChevronRight,
+  Heart,
+  Thermometer,
+  Wind,
+  Droplet,
+  RefreshCw,
+  X,
+  Filter,
   ShieldAlert,
   Baby,
   Building2,
   Stethoscope
 } from 'lucide-react';
-import { apiFetch } from '../../utils/api';
+import { apiFetch } from '@/utils/api';
 import MaternityChecklistView from './MaternityChecklistView';
 
 interface AdmittedPatient {
@@ -355,12 +355,12 @@ export default function AdmittedPatientsView() {
     <div className="space-y-6">
       {/* TWO-CONTAINER SPLIT LAYOUT: LEFT CONTAINER & RIGHT CONTAINER */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-        
+
         {/* ========================================================================= */}
         {/* LEFT CONTAINER: TOTAL AMOUNT OF ADMITTED PATIENTS & PATIENT SELECTION LIST */}
         {/* ========================================================================= */}
         <div className="lg:col-span-4 bg-white border border-slate-200 rounded-3xl p-5 shadow-xs flex flex-col space-y-4">
-          
+
           {/* Left Container Header */}
           <div className="flex items-center justify-between pb-3 border-b border-slate-100">
             <div>
@@ -439,10 +439,10 @@ export default function AdmittedPatientsView() {
                 const isMaternity = (p.ward || '').toLowerCase().includes('maternity') || (p.category || '').toLowerCase().includes('maternity');
                 const isEmergency = (p.ward || '').toLowerCase().includes('emergency') || (p.status || '').toLowerCase().includes('emergency');
                 const admittedStatus = isMaternity ? 'MATERNITY WARD' : isEmergency ? 'EMERGENCY' : (p.ward ? p.ward.toUpperCase() : 'GENERAL WARD');
-                const statusBadgeColor = isMaternity 
-                  ? 'bg-pink-100 text-pink-800 border-pink-200' 
-                  : isEmergency 
-                    ? 'bg-rose-100 text-rose-800 border-rose-200' 
+                const statusBadgeColor = isMaternity
+                  ? 'bg-pink-100 text-pink-800 border-pink-200'
+                  : isEmergency
+                    ? 'bg-rose-100 text-rose-800 border-rose-200'
                     : 'bg-blue-100 text-blue-800 border-blue-200';
 
                 return (
@@ -504,7 +504,7 @@ export default function AdmittedPatientsView() {
         {/* RIGHT CONTAINER: COMPLETE INFORMATION OF THE SELECTED ADMITTED PATIENT */}
         {/* ========================================================================= */}
         <div className="lg:col-span-8 bg-white border border-slate-200 rounded-3xl p-6 shadow-xs flex flex-col space-y-6">
-          
+
           {isLoadingDetails && !patientDetails ? (
             <div className="py-24 text-center text-slate-400 text-xs flex flex-col items-center justify-center gap-2">
               <RefreshCw className="h-6 w-6 animate-spin text-[#2A758C]" />
@@ -690,7 +690,7 @@ export default function AdmittedPatientsView() {
               {/* ========================================================================= */}
               {activeSubLink === 'medications' && (
                 <div className="space-y-6 animate-fade-in">
-                  
+
                   {/* Prescribed Medications Container */}
                   <div className="border border-slate-200 rounded-2xl p-5 bg-white space-y-4">
                     <div className="flex items-center justify-between">
@@ -901,7 +901,7 @@ export default function AdmittedPatientsView() {
               {/* ========================================================================= */}
               {activeSubLink === 'observations' && (
                 <div className="space-y-6 animate-fade-in">
-                  
+
                   {/* Container: Record New Observation */}
                   <div className="border border-slate-200 rounded-2xl p-5 bg-white space-y-4">
                     <div>
@@ -1003,7 +1003,7 @@ export default function AdmittedPatientsView() {
                               <div className="flex items-center justify-between gap-2">
                                 <div className="flex items-center gap-2">
                                   <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider ${
-                                    isComplaint 
+                                    isComplaint
                                       ? 'bg-amber-100 text-amber-800 border border-amber-200'
                                       : isWound
                                       ? 'bg-rose-100 text-rose-800 border border-rose-200'
@@ -1039,7 +1039,7 @@ export default function AdmittedPatientsView() {
               {/* ========================================================================= */}
               {activeSubLink === 'vitals' && (
                 <div className="space-y-6 animate-fade-in">
-                  
+
                   {/* Form: Record Current Vitals */}
                   <div className="border border-slate-200 rounded-2xl p-5 bg-white space-y-4">
                     <div>
@@ -1054,7 +1054,7 @@ export default function AdmittedPatientsView() {
 
                     <form onSubmit={handleRecordVitals} className="space-y-4">
                       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                        
+
                         {/* Blood Pressure */}
                         <div>
                           <label className="block text-xs font-bold text-slate-700 mb-1 flex items-center gap-1">
@@ -1288,10 +1288,10 @@ export default function AdmittedPatientsView() {
               {/* ========================================================================= */}
               {activeSubLink === 'billing' && (
                 <div className="space-y-6 animate-fade-in">
-                  
+
                   {/* Three Billing Summary Metrics */}
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                    
+
                     {/* Total Amount Charged */}
                     <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-1">
                       <span className="text-xs font-bold text-slate-500 uppercase tracking-wider block">

@@ -1,5 +1,3 @@
-import { NotificationMsg } from '../types';
-
 const configuredApiBase = (import.meta.env.VITE_API_BASE_URL || '').trim().replace(/\/$/, '');
 export const API_BASE = configuredApiBase || '/api';
 
@@ -118,7 +116,7 @@ export class IntranetSocket {
 
     // Connect to websocket with token in query param if valid
     const wsUrl = `${baseSocketUrl}${token ? `?token=${encodeURIComponent(token)}` : ''}`;
-    
+
     try {
       this.ws = new WebSocket(wsUrl);
     } catch (err) {

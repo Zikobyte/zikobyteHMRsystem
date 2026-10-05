@@ -22,7 +22,7 @@ import LoginScreen from "@/components/LoginScreen";
 import { getAuthToken } from "@/utils/api";
 import { useSession } from "@/lib/routing/session";
 import { doctorSubTab, resolveViewPlan } from "@/lib/routing/view-plan";
-import { SessionProvider } from "./lib/routing/session";
+import { SessionProvider } from "@/lib/routing/session";
 
 export default function App() {
 	return (

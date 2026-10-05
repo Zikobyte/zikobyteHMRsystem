@@ -1,19 +1,19 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  Baby, 
-  Check, 
-  X, 
-  Send, 
-  AlertTriangle, 
-  Receipt, 
-  CheckCircle2, 
-  Package, 
+import {
+  Baby,
+  Check,
+  X,
+  Send,
+  AlertTriangle,
+  Receipt,
+  CheckCircle2,
+  Package,
   ShieldCheck,
   RefreshCw,
   Sparkles,
   Heart
 } from 'lucide-react';
-import { apiFetch } from '../../utils/api';
+import { apiFetch } from '@/utils/api';
 
 export interface ChecklistItem {
   id: string;
@@ -392,7 +392,7 @@ export default function MaternityChecklistView({ patient, onBillingUpdated }: Ma
             const isMissing = item.status === 'missing';
 
             return (
-              <div 
+              <div
                 key={item.id}
                 className={`p-3 sm:px-4 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 transition-colors ${
                   isBrought ? 'bg-emerald-50/30' : 'hover:bg-slate-50/50'
@@ -403,10 +403,10 @@ export default function MaternityChecklistView({ patient, onBillingUpdated }: Ma
                   <span className="text-xs text-slate-400 font-medium min-w-[20px] pt-0.5">
                     {item.number}.
                   </span>
-                  <span 
+                  <span
                     className={`text-xs ${
-                      isBrought 
-                        ? 'line-through text-slate-400 font-medium' 
+                      isBrought
+                        ? 'line-through text-slate-400 font-medium'
                         : 'text-slate-800 font-medium'
                     }`}
                   >

@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
-import type { User } from '../../types';
-import { findRouteByTab, getDefaultTab, isTabAllowed, resolveInitialTab } from './routes';
+import type { User } from '@/types';
+import { findRouteByTab, getDefaultTab, isTabAllowed, resolveInitialTab } from '@/lib/routing/routes';
 
 export type SessionStatus = 'loading' | 'anonymous' | 'authenticated';
 
