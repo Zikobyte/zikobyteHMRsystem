@@ -21,6 +21,25 @@ import {
 } from 'lucide-react';
 import { apiFetch } from '../../utils/api';
 
+export interface MaternityHandoverItem {
+  id?: string;
+  section?: 'mother_baby' | 'delivery';
+  label?: string;
+  name?: string;
+  status?: 'brought' | 'missing';
+  amount?: number;
+  price?: number;
+  default_price?: number;
+}
+
+function getItemLabel(item: MaternityHandoverItem): string {
+  return item.label ?? item.name ?? 'Supply item';
+}
+
+function getItemAmount(item: MaternityHandoverItem): number {
+  return Number(item.amount ?? item.price ?? item.default_price ?? 0) || 0;
+}
+
 export interface MaternityHandoverRecord {
   id: string;
   admission_id: string;
@@ -31,18 +50,11 @@ export interface MaternityHandoverRecord {
   bed?: string;
   total_amount: number;
   items_billed_count?: number;
-  items?: Array<{
-    id: string;
-    section: 'mother_baby' | 'delivery';
-    name: string;
-    status: 'brought' | 'missing';
-    amount: number;
-    price?: number;
-    default_price?: number;
-  }>;
+  items?: MaternityHandoverItem[];
   checklist?: Record<string, { status: 'brought' | 'missing'; amount: number }>;
   nurse_name: string;
-  handed_over_at: string;
+  handed_over_at?: string;
+  formatted_date?: string;
   status: 'Pending Handover' | 'Balanced & Received';
   balanced_by?: string;
   balanced_at?: string;
@@ -82,13 +94,13 @@ export default function MaternitySuppliesCashierView({
   const filteredRecords = records.filter(record => {
     const matchesStatus = statusFilter === 'ALL' || record.status === statusFilter;
     const query = searchQuery.toLowerCase();
-    const matchesSearch = 
+    const matchesSearch =
       !query ||
       (record.patient_name || '').toLowerCase().includes(query) ||
       (record.hospital_number || '').toLowerCase().includes(query) ||
       (record.nurse_name || '').toLowerCase().includes(query) ||
       (record.ward || '').toLowerCase().includes(query) ||
-      (record.items || []).some(item => item.name.toLowerCase().includes(query));
+      (record.items || []).some(item => (item.label ?? item.name ?? '').toLowerCase().includes(query));
     return matchesStatus && matchesSearch;
   });
 
@@ -284,7 +296,11 @@ export default function MaternitySuppliesCashierView({
             {filteredRecords.map((record) => {
               const isPending = record.status === 'Pending Handover';
               const itemsList = record.items || [];
-              const missingItems = itemsList.filter(i => i.status === 'missing');
+              const handoverDisplayTime: string =
+                (record.handed_over_at as string | undefined)
+                ?? (record as unknown as { formatted_date?: string }).formatted_date
+                ?? record.created_at
+                ?? '—';
 
               return (
                 <div 
@@ -321,7 +337,7 @@ export default function MaternitySuppliesCashierView({
                         </span>
                         <span>•</span>
                         <span>
-                          <span className="font-semibold text-slate-700">Handover Time:</span> {record.handed_over_at}
+                          <span className="font-semibold text-slate-700">Handover Time:</span> {handoverDisplayTime}
                         </span>
                         {record.balanced_by && (
                           <>
@@ -337,18 +353,23 @@ export default function MaternitySuppliesCashierView({
                       <div className="pt-2">
                         <p className="text-[11px] font-bold text-slate-600 mb-1.5 flex items-center gap-1.5">
                           <PackageCheck className="h-3.5 w-3.5 text-pink-600" />
-                          <span>Billed Supplies & Consumables ({missingItems.length} items):</span>
+                          <span>Billed Supplies & Consumables ({itemsList.length} items):</span>
                         </p>
                         <div className="flex flex-wrap gap-1.5 max-w-2xl">
-                          {missingItems.length > 0 ? (
-                            missingItems.map((item, idx) => (
-                              <span 
+                          {itemsList.length > 0 ? (
+                            itemsList.map((item, idx) => (
+                              <span
                                 key={idx}
                                 className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-pink-50 text-slate-800 border border-pink-200 text-[11px] font-medium"
                               >
-                                <span className="truncate max-w-[240px]">{item.name}</span>
+                                <span className="truncate max-w-[240px]">{getItemLabel(item)}</span>
+                                {item.status && (
+                                  <span className="text-[10px] font-bold uppercase tracking-wide text-slate-500">
+                                    • {item.status}
+                                  </span>
+                                )}
                                 <span className="font-black font-mono text-pink-700 bg-white px-1.5 py-0.2 rounded border border-pink-100">
-                                  ₦{(Number(item.amount) || Number(item.price) || 0).toLocaleString()}
+                                  ₦{getItemAmount(item).toLocaleString()}
                                 </span>
                               </span>
                             ))
@@ -563,7 +584,7 @@ export default function MaternitySuppliesCashierView({
                 </div>
                 <div>
                   <span className="text-[10px] text-slate-400 block font-semibold">Handover Date:</span>
-                  <span className="font-semibold text-slate-700">{selectedRecordForReceipt.handed_over_at}</span>
+                  <span className="font-semibold text-slate-700">{selectedRecordForReceipt.handed_over_at ?? selectedRecordForReceipt.formatted_date ?? selectedRecordForReceipt.created_at ?? '—'}</span>
                 </div>
               </div>
 
@@ -578,12 +599,11 @@ export default function MaternitySuppliesCashierView({
                   </thead>
                   <tbody className="divide-y divide-slate-100">
                     {(selectedRecordForReceipt.items || [])
-                      .filter(i => i.status === 'missing')
                       .map((item, idx) => (
                         <tr key={idx} className="text-[11px]">
-                          <td className="py-1.5 font-medium text-slate-800 pr-2">{item.name}</td>
+                          <td className="py-1.5 font-medium text-slate-800 pr-2">{getItemLabel(item)}</td>
                           <td className="py-1.5 text-right font-mono font-bold text-slate-900">
-                            ₦{(Number(item.amount) || Number(item.price) || 0).toLocaleString()}
+                            ₦{getItemAmount(item).toLocaleString()}
                           </td>
                         </tr>
                       ))}

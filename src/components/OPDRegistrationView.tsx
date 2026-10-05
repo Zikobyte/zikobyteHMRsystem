@@ -57,6 +57,13 @@ export default function OPDRegistrationView({
   onRegisterModalClose
 }: OPDRegistrationViewProps) {
   const [currentUser, setCurrentUser] = useState<any>(null);
+  // 403-avoidance gate: GET/POST /opd/cards/replace* allows OPD-group + Cashier-group only
+  // (+ admin bypass via backend authorizeRoles). Matches patients.routes.ts:416-417 +
+  // ROLE_EQUIVALENTS in auth.middleware.ts. Presentation-only: no backend change.
+  const CARD_REPLACEMENT_ROLES = ['OPD Clerk', 'Receptionist', 'Records Officer', 'Cashier', 'Account Officer', 'Accountant'];
+  const CARD_REPLACEMENT_ADMIN_BYPASS = ['Administrator', 'IT Administrator', 'Management', 'Super Administrator'];
+  const canManageCardReplacements = (role?: string | null): boolean =>
+    !!role && ([...CARD_REPLACEMENT_ROLES, ...CARD_REPLACEMENT_ADMIN_BYPASS] as string[]).includes(role);
   const [activeSubTab, setActiveSubTab] = useState<'reception' | 'returning' | 'admissions' | 'nursing' | 'catalog' | 'records' | 'replacements'>('reception');
   const [selectedDetailPatient, setSelectedDetailPatient] = useState<any | null>(null);
 
@@ -270,7 +277,17 @@ export default function OPDRegistrationView({
     fetchPrices();
     fetchCompanies();
     fetchFamilies();
-    fetchReplacements();
+    // 403-avoidance: GET /opd/cards/replacements allows OPD-group + Cashier only.
+    // Skip the fetch for other roles so they never see an unactionable 403.
+    try {
+      const savedRole = localStorage.getItem('zmc_user');
+      const parsedRole = savedRole ? JSON.parse(savedRole)?.role : null;
+      if (canManageCardReplacements(parsedRole)) {
+        fetchReplacements();
+      }
+    } catch {
+      // If user context is unreachable, stay silent (fetchReplacements itself is 403-tolerant).
+    }
   }, []);
 
   // Dynamic Emergency Charge calculation effect
@@ -336,6 +353,10 @@ export default function OPDRegistrationView({
       const res = await apiFetch('/patients/opd/cards/replacements');
       if (res.success) setReplacements(res.data);
     } catch (err: any) {
+      // 403-tolerant: unauthorized roles never call this (gated above), but stay
+      // silent on 403/forbidden so no console spam and no error state is set.
+      const msg = String(err?.message || '');
+      if (msg.includes('403') || msg.toLowerCase().includes('forbidden')) return;
       console.error('Failed to load card replacements', err);
     }
   };
@@ -1893,7 +1914,7 @@ export default function OPDRegistrationView({
               Medical Reports & HMS
             </button>
 
-            {['Administrator', 'Management', 'Records Officer'].includes(currentUser?.role) && (
+            {canManageCardReplacements(currentUser?.role) && (
               <button
                 onClick={() => setActiveSubTab('replacements')}
                 className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
@@ -2177,8 +2198,9 @@ export default function OPDRegistrationView({
                             </button>
                             <button
                               onClick={() => handleOpenReplacement(patient)}
-                              className="px-2.5 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold rounded-lg text-[10px] transition-colors cursor-pointer inline-flex items-center gap-1"
-                              title="Replace Lost Card"
+                              disabled={!canManageCardReplacements(currentUser?.role)}
+                              className={`px-2.5 py-1 font-bold rounded-lg text-[10px] transition-colors inline-flex items-center gap-1 ${canManageCardReplacements(currentUser?.role) ? 'bg-rose-50 hover:bg-rose-100 text-rose-700 cursor-pointer' : 'bg-slate-100 text-slate-400 cursor-not-allowed'}`}
+                              title={canManageCardReplacements(currentUser?.role) ? 'Replace Lost Card' : 'OPD or Cashier staff only'}
                             >
                               <CreditCard className="h-2.5 w-2.5" /> Replace Card
                             </button>
@@ -2723,7 +2745,7 @@ export default function OPDRegistrationView({
       {/* ==========================================
           SUBTAB 4: CARD REPLACEMENTS LOG
           ========================================== */}
-      {activeSubTab === 'replacements' && (
+      {activeSubTab === 'replacements' && canManageCardReplacements(currentUser?.role) && (
         <div className="bg-white rounded-3xl p-6 border border-slate-100 shadow-xs space-y-6">
           <div>
             <h2 className="text-base font-bold text-slate-900">Card Replacement & History Refresh Logs</h2>
@@ -4674,13 +4696,17 @@ export default function OPDRegistrationView({
                   </button>
                   <button
                     type="submit"
-                    disabled={isSavingReplacement}
-                    className="px-5 py-2 bg-rose-600 hover:bg-rose-700 disabled:bg-slate-200 disabled:text-slate-400 text-white font-bold rounded-xl text-xs transition-all cursor-pointer flex items-center gap-2"
+                    disabled={isSavingReplacement || !canManageCardReplacements(currentUser?.role)}
+                    title={canManageCardReplacements(currentUser?.role) ? undefined : 'OPD or Cashier staff only'}
+                    className="px-5 py-2 bg-rose-600 hover:bg-rose-700 disabled:bg-slate-200 disabled:text-slate-400 text-white font-bold rounded-xl text-xs transition-all cursor-pointer flex items-center gap-2 disabled:cursor-not-allowed"
                   >
                     {isSavingReplacement && <Loader2 className="h-3 w-3 animate-spin" />}
                     {isSavingReplacement ? 'Approving...' : 'Approve & Reset History'}
                   </button>
                 </div>
+                {!canManageCardReplacements(currentUser?.role) && (
+                  <p className="text-[11px] text-slate-500 font-medium">Only OPD or Cashier staff can approve card replacements.</p>
+                )}
               </form>
             </motion.div>
           </div>

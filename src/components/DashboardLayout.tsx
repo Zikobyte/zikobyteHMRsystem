@@ -335,11 +335,19 @@ export default function DashboardLayout({
   ];
 
   const isEyeClinicStaff = (user.role as string) === 'Eye Clinic' || user.department === 'Eye Clinic';
+  // Cashier-role users share the Finance department in seed data
+  // (cashier1: role Cashier / dept Finance), so the Finance-based
+  // account-officer match must exclude cashier roles. This mirrors
+  // navigation.ts where the cashier allow-list check precedes finance.
+  const isCashierRole = (user.role as string).toLowerCase().includes('cashier');
   const isAccountOfficerStaff =
     (user.role as string) === 'Account Officer' ||
     (user.role as string) === 'Accountant' ||
     user.department === 'Account Officer' ||
-    user.department === 'Accounts';
+    user.department === 'Accounts' ||
+    (!isCashierRole &&
+      (user.department === 'Finance' ||
+        (user.department as string).toLowerCase() === 'finance'));
 
   const accountOfficerMenuGroups: MenuGroup[] = [
     {
@@ -542,8 +550,7 @@ export default function DashboardLayout({
   const isCashierStaff =
     (user.role as string) === 'Cashier' ||
     (user.role as string).toLowerCase().includes('cashier') ||
-    (user.department as string).toLowerCase().includes('cashier') ||
-    user.department === 'Finance';
+    (user.department as string).toLowerCase().includes('cashier');
 
   const cashierMenuGroups: MenuGroup[] = [
     {

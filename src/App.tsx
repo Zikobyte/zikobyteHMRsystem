@@ -125,7 +125,11 @@ function AppShell(): React.JSX.Element {
 						<LaboratoryView activeTab={activeTab} />
 					)}
 					{plan?.kind === "pharmacy" && (
-						<PharmacyView activeTab={activeTab} onTabChange={navigate} />
+						<PharmacyView
+							activeTab={activeTab}
+							onTabChange={navigate}
+							currentUser={user}
+						/>
 					)}
 					{plan?.kind === "patient-directory-import" && (
 						<PatientDirectoryImportView currentUser={user} />

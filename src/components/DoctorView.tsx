@@ -40,6 +40,7 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import DoctorSpecializedDirectory from './DoctorSpecializedDirectory';
 import { resolveMedPrice } from '../backend/catalogue/meds-catalogue';
+import { resolveLabTestPrice } from '../backend/catalogue/lab-catalogue';
 
 // Lab tests catalog matching exact user requests & pricing spec
 export const CHEMISTRY_TESTS = [
@@ -694,6 +695,49 @@ export default function DoctorView({ activeSubTab, onNavigateTab }: DoctorViewPr
     }
   }, [activeSubTab]);
   const [searchQuery, setSearchQuery] = useState('');
+
+  // Phase 1: READ-ONLY consultation totals fed by GET /patients/dashboard/stats.
+  // Intentionally excludes totalRevenue (minimum-necessary for Doctor role).
+  interface DoctorConsultTotals {
+    totalPatients: number;
+    standardCount: number;
+    maternityCount: number;
+    emergencyCount: number;
+    admissionsCount: number;
+    queueCount: number;
+  }
+  const [consultTotals, setConsultTotals] = useState<DoctorConsultTotals | null>(null);
+  const [isTotalsLoading, setIsTotalsLoading] = useState(false);
+  const [totalsFailed, setTotalsFailed] = useState(false);
+
+  useEffect(() => {
+    const fetchConsultTotals = async () => {
+      setIsTotalsLoading(true);
+      setTotalsFailed(false);
+      try {
+        const response = await apiFetch('/patients/dashboard/stats');
+        if (response.success && response.data) {
+          const d = response.data;
+          setConsultTotals({
+            totalPatients: Number(d.totalPatients ?? 0),
+            standardCount: Number(d.standardCount ?? 0),
+            maternityCount: Number(d.maternityCount ?? 0),
+            emergencyCount: Number(d.emergencyCount ?? 0),
+            admissionsCount: Number(d.admissionsCount ?? 0),
+            queueCount: Number(d.queueCount ?? 0),
+          });
+        } else {
+          setTotalsFailed(true);
+        }
+      } catch (err) {
+        console.error('Failed to load consultation totals', err);
+        setTotalsFailed(true);
+      } finally {
+        setIsTotalsLoading(false);
+      }
+    };
+    fetchConsultTotals();
+  }, []);
   
   // State for outpatients
   const [outpatients, setOutpatients] = useState<any[]>([]);
@@ -1459,7 +1503,7 @@ export default function DoctorView({ activeSubTab, onNavigateTab }: DoctorViewPr
     });
   };
 
-  // Order Lab Test for Outpatient
+  // Order Lab Test for Outpatient — resolves catalogue price so chips/total render correctly
   const handleOrderOutpatientLabTest = (category: string, testName: string, testCode: string) => {
     if (!selectedOutpatientId || !testName) return;
     
@@ -1470,10 +1514,45 @@ export default function DoctorView({ activeSubTab, onNavigateTab }: DoctorViewPr
       return;
     }
 
+    let price = 0;
+    try {
+      const byCode = testCode && typeof resolveLabTestPrice === 'function'
+        ? resolveLabTestPrice({ code: testCode })
+        : null;
+      const byName = !byCode && testName && typeof resolveLabTestPrice === 'function'
+        ? resolveLabTestPrice({ name: testName })
+        : null;
+      const resolved = byCode ?? byName;
+      if (resolved && typeof resolved.price === 'number') {
+        price = resolved.price;
+      } else {
+        const localCatalogue = [
+          ...CHEMISTRY_TESTS,
+          ...SEROLOGY_TESTS,
+          ...HAEMATOLOGY_TESTS,
+          ...MICROBIOLOGY_TESTS,
+          ...PARASITOLOGY_TESTS,
+        ];
+        const localMatch =
+          localCatalogue.find((t) => t.name === testName) ??
+          (testCode ? localCatalogue.find((t) => t.code === testCode) : undefined);
+        if (localMatch && typeof localMatch.price === 'number') {
+          price = localMatch.price;
+        } else {
+          console.warn(`[DoctorView] Lab price not found for code="${testCode}" name="${testName}" — defaulting to 0`);
+          price = 0;
+        }
+      }
+    } catch {
+      console.warn(`[DoctorView] Lab catalogue unavailable for code="${testCode}" name="${testName}" — defaulting to 0`);
+      price = 0;
+    }
+
     const newTest = {
       category,
       code: testCode,
       name: testName,
+      price,
       timestamp: new Date().toLocaleString()
     };
 
@@ -2360,6 +2439,53 @@ export default function DoctorView({ activeSubTab, onNavigateTab }: DoctorViewPr
           )}
         </div>
       </div>
+
+      {/* Phase 1: READ-ONLY consultation totals strip (doctor-only view, no revenue, no actions) */}
+      {(currentTab === 'outpatients' || currentTab === 'admitted') && !totalsFailed && (consultTotals || isTotalsLoading) && (
+        <div
+          aria-label="Consultation totals"
+          role="status"
+          aria-busy={isTotalsLoading}
+          className="bg-white border-b border-slate-200 px-6 py-2 flex flex-wrap gap-2 shrink-0"
+        >
+          <span className="flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs">
+            <span className="font-medium text-slate-500">Total</span>
+            <span className={`font-mono font-bold text-slate-900 ${isTotalsLoading && !consultTotals ? 'animate-pulse' : ''}`}>
+              {isTotalsLoading && !consultTotals ? '—' : (consultTotals?.totalPatients ?? 0).toLocaleString()}
+            </span>
+          </span>
+          <span className="flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs">
+            <span className="font-medium text-slate-500">Standard</span>
+            <span className={`font-mono font-bold text-slate-900 ${isTotalsLoading && !consultTotals ? 'animate-pulse' : ''}`}>
+              {isTotalsLoading && !consultTotals ? '—' : (consultTotals?.standardCount ?? 0).toLocaleString()}
+            </span>
+          </span>
+          <span className="flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs">
+            <span className="font-medium text-slate-500">Maternity</span>
+            <span className={`font-mono font-bold text-slate-900 ${isTotalsLoading && !consultTotals ? 'animate-pulse' : ''}`}>
+              {isTotalsLoading && !consultTotals ? '—' : (consultTotals?.maternityCount ?? 0).toLocaleString()}
+            </span>
+          </span>
+          <span className="flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs">
+            <span className="font-medium text-slate-500">Emergency</span>
+            <span className={`font-mono font-bold text-slate-900 ${isTotalsLoading && !consultTotals ? 'animate-pulse' : ''}`}>
+              {isTotalsLoading && !consultTotals ? '—' : (consultTotals?.emergencyCount ?? 0).toLocaleString()}
+            </span>
+          </span>
+          <span className="flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs">
+            <span className="font-medium text-slate-500">Admitted</span>
+            <span className={`font-mono font-bold text-slate-900 ${isTotalsLoading && !consultTotals ? 'animate-pulse' : ''}`}>
+              {isTotalsLoading && !consultTotals ? '—' : (consultTotals?.admissionsCount ?? 0).toLocaleString()}
+            </span>
+          </span>
+          <span className="flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs">
+            <span className="font-medium text-slate-500">In Queue</span>
+            <span className={`font-mono font-bold text-slate-900 ${isTotalsLoading && !consultTotals ? 'animate-pulse' : ''}`}>
+              {isTotalsLoading && !consultTotals ? '—' : (consultTotals?.queueCount ?? 0).toLocaleString()}
+            </span>
+          </span>
+        </div>
+      )}
 
       {currentTab === 'standard' || currentTab === 'specialized' ? (
         <div className="flex-1 overflow-hidden">

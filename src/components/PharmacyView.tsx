@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { apiFetch, socketManager } from '../utils/api';
+import type { User } from '../types';
 import { 
   Pill, 
   Search, 
@@ -96,6 +97,7 @@ interface StockItem {
 interface PharmacyViewProps {
   activeTab?: string;
   onTabChange?: (tab: string) => void;
+  currentUser?: Partial<Pick<User, 'role' | 'department' | 'username'>>;
 }
 
 // Pure procurement helpers (exported for bun:test).
@@ -156,7 +158,33 @@ export function partitionProcurementResults(
   };
 }
 
-export default function PharmacyView({ activeTab: parentActiveTab, onTabChange }: PharmacyViewProps = {}) {
+export default function PharmacyView({ activeTab: parentActiveTab, onTabChange, currentUser }: PharmacyViewProps = {}) {
+  // Phase 4 role gating: desk is visible to all, but only Pharmacy staff
+  // (plus Administrator/IT Administrator/Management bypass, mirroring
+  // backend auth.middleware isRoleAuthorized) may act outside Admitted
+  // Orders. Doctors are fully actionable in Admitted Orders only.
+  const currentRole = (currentUser?.role ?? '').trim();
+  const currentDepartment = (currentUser?.department ?? '').trim();
+  const hasUserContext = currentRole !== '' || currentDepartment !== '';
+  const roleLower = currentRole.toLowerCase();
+  const deptLower = currentDepartment.toLowerCase();
+  const isAdminBypass =
+    roleLower === 'administrator' ||
+    roleLower === 'it administrator' ||
+    roleLower === 'management' ||
+    roleLower === 'super administrator';
+  // No user context (legacy/test usage) preserves full Pharmacist flow.
+  const isPharmacist =
+    !hasUserContext ||
+    roleLower.includes('pharmac') ||
+    deptLower.includes('pharmac') ||
+    isAdminBypass;
+  const isDoctor = roleLower === 'doctor';
+  const canActOnAdmitted = isPharmacist || isDoctor;
+  const canActElsewhere = isPharmacist;
+  const ROLE_GUARD_MESSAGE =
+    'Pharmacist only — Doctors may act only in Admitted Orders.';
+
   // Active Sub-Tab Navigation
   const [activeTab, setActiveTab] = useState<'dispensing' | 'admitted' | 'procurement' | 'stock'>(() => {
     if (parentActiveTab) {
@@ -402,6 +430,10 @@ export default function PharmacyView({ activeTab: parentActiveTab, onTabChange }
 
   // Handler: Dispense Medications
   const handleDispenseMeds = (patientId: string) => {
+    if (!canActElsewhere) {
+      setDispenseError(ROLE_GUARD_MESSAGE);
+      return;
+    }
     const patient = patientQueue.find(p => p.id === patientId);
     if (!patient) return;
 
@@ -433,6 +465,10 @@ export default function PharmacyView({ activeTab: parentActiveTab, onTabChange }
 
   // Handler: Simulate Payment for testing
   const handleSimulatePayment = (patientId: string) => {
+    if (!canActElsewhere) {
+      setDispenseError(ROLE_GUARD_MESSAGE);
+      return;
+    }
     setPatientQueue(prev => prev.map(p => p.id === patientId ? { ...p, paymentStatus: 'PAID' } : p));
     setDispenseSuccess(`Payment clearance confirmed for patient! Prescriptions now unlocked.`);
     setTimeout(() => setDispenseSuccess(''), 4000);
@@ -498,6 +534,11 @@ export default function PharmacyView({ activeTab: parentActiveTab, onTabChange }
     setProcurementSuccess('');
     setProcurementError('');
 
+    if (!canActElsewhere) {
+      setProcurementError(ROLE_GUARD_MESSAGE);
+      return;
+    }
+
     // Validate rows (pure helper; empty rows surface inline validation, not a card)
     const validItems = buildProcurementItems(procurementFormRows);
 
@@ -553,6 +594,11 @@ export default function PharmacyView({ activeTab: parentActiveTab, onTabChange }
     setStockError('');
     setStockSuccess('');
 
+    if (!canActElsewhere) {
+      setStockError(ROLE_GUARD_MESSAGE);
+      return;
+    }
+
     if (!stockDrugName.trim()) {
       setStockError('Drug name is required.');
       return;
@@ -599,6 +645,10 @@ export default function PharmacyView({ activeTab: parentActiveTab, onTabChange }
 
   // Dispense Admitted Order
   const handleDispenseAdmittedOrder = (id: string) => {
+    if (!canActOnAdmitted) {
+      setDispenseError(ROLE_GUARD_MESSAGE);
+      return;
+    }
     const order = admittedOrders.find(o => o.id === id);
     setAdmittedOrders(prev => prev.map(o => o.id === id ? { ...o, status: 'Dispensed' } : o));
     if (order) {
@@ -637,6 +687,24 @@ export default function PharmacyView({ activeTab: parentActiveTab, onTabChange }
           </span>
         </div>
       </div>
+
+      {/* Phase 4: read-only notice for non-Pharmacist roles */}
+      {hasUserContext && !isPharmacist && (
+        <div
+          role="note"
+          aria-label="Read-only access notice"
+          className="bg-amber-50 border border-amber-200 p-3.5 rounded-2xl text-xs text-amber-900 font-medium flex items-center gap-2"
+        >
+          <AlertCircle className="h-4 w-4 text-amber-700 shrink-0" />
+          <span>
+            {isDoctor ? (
+              <>Viewing as Doctor — read-only except Admitted Orders, which are fully actionable.</>
+            ) : (
+              <>Viewing as {currentRole || currentDepartment} — read-only. Actions are restricted to Pharmacists (Doctors may act only in Admitted Orders).</>
+            )}
+          </span>
+        </div>
+      )}
 
       {/* ========================================================================= */}
       {/* PAGE 1: DISPENSING PAGE                                                  */}
@@ -814,7 +882,9 @@ export default function PharmacyView({ activeTab: parentActiveTab, onTabChange }
                     <div className="pt-2 flex flex-col sm:flex-row items-center gap-3">
                       <button
                         onClick={() => handleDispenseMeds(selectedPatient.id)}
-                        className="w-full sm:w-auto px-6 py-2.5 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-xl text-xs transition-all shadow-xs flex items-center justify-center gap-2 cursor-pointer"
+                        disabled={!canActElsewhere}
+                        title={!canActElsewhere ? 'Pharmacist only' : undefined}
+                        className="w-full sm:w-auto px-6 py-2.5 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-xl text-xs transition-all shadow-xs flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         <CheckCircle2 className="h-4 w-4" />
                         Dispense Medications
@@ -850,7 +920,9 @@ export default function PharmacyView({ activeTab: parentActiveTab, onTabChange }
                     </div>
                     <button
                       onClick={() => handleSimulatePayment(selectedPatient.id)}
-                      className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-xs transition-all cursor-pointer inline-flex items-center gap-1.5"
+                      disabled={!canActElsewhere}
+                      title={!canActElsewhere ? 'Pharmacist only' : undefined}
+                      className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-xs transition-all cursor-pointer inline-flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       <Check className="h-3.5 w-3.5" />
                       Simulate Payment Clearance (Mark Paid)
@@ -900,6 +972,26 @@ export default function PharmacyView({ activeTab: parentActiveTab, onTabChange }
               </div>
             </div>
 
+            {dispenseSuccess && (
+              <div className="bg-emerald-50 border border-emerald-200 p-4 rounded-2xl text-xs text-emerald-800 font-medium flex items-center justify-between gap-2 shadow-2xs">
+                <div className="flex items-center gap-2">
+                  <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0" />
+                  <span>{dispenseSuccess}</span>
+                </div>
+                <button onClick={() => setDispenseSuccess('')} className="text-emerald-700 hover:text-emerald-900 text-xs font-bold">Dismiss</button>
+              </div>
+            )}
+
+            {dispenseError && (
+              <div className="bg-rose-50 border border-rose-200 p-4 rounded-2xl text-xs text-rose-800 font-medium flex items-center justify-between gap-2 shadow-2xs">
+                <div className="flex items-center gap-2">
+                  <AlertCircle className="h-4 w-4 text-rose-600 shrink-0" />
+                  <span>{dispenseError}</span>
+                </div>
+                <button onClick={() => setDispenseError('')} className="text-rose-700 hover:text-rose-900 text-xs font-bold">Dismiss</button>
+              </div>
+            )}
+
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {admittedOrders.map(order => (
                 <div key={order.id} className="bg-slate-50/70 border border-slate-200/80 p-5 rounded-2xl space-y-3">
@@ -939,7 +1031,9 @@ export default function PharmacyView({ activeTab: parentActiveTab, onTabChange }
                     {order.status === 'Pending Ward Release' ? (
                       <button
                         onClick={() => handleDispenseAdmittedOrder(order.id)}
-                        className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs rounded-xl transition-all cursor-pointer flex items-center gap-1.5"
+                        disabled={!canActOnAdmitted}
+                        title={!canActOnAdmitted ? 'Pharmacist only' : undefined}
+                        className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs rounded-xl transition-all cursor-pointer flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         <Check className="h-3.5 w-3.5" /> Dispense to Ward Nurse
                       </button>
@@ -1076,7 +1170,9 @@ export default function PharmacyView({ activeTab: parentActiveTab, onTabChange }
 
                   <button
                     type="submit"
-                    className="w-full sm:w-auto px-6 py-2.5 bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs rounded-xl transition-all shadow-xs flex items-center justify-center gap-2 cursor-pointer"
+                    disabled={!canActElsewhere}
+                    title={!canActElsewhere ? 'Pharmacist only' : undefined}
+                    className="w-full sm:w-auto px-6 py-2.5 bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs rounded-xl transition-all shadow-xs flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     <Send className="h-4 w-4" />
                     Submit Request to HR procurement ledger
@@ -1208,7 +1304,9 @@ export default function PharmacyView({ activeTab: parentActiveTab, onTabChange }
               <div className="md:col-span-3">
                 <button
                   type="submit"
-                  className="w-full py-2 bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs rounded-xl transition-all shadow-xs flex items-center justify-center gap-2 cursor-pointer"
+                  disabled={!canActElsewhere}
+                  title={!canActElsewhere ? 'Pharmacist only' : undefined}
+                  className="w-full py-2 bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs rounded-xl transition-all shadow-xs flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <Plus className="h-4 w-4" />
                   Add Stock

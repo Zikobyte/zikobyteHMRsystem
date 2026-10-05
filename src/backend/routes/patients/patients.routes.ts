@@ -20,12 +20,12 @@ router.get('/opd/families', controller.getFamilies as any);
 router.post('/opd/families/deposit', controller.addFamilyDeposit as any);
 router.post('/opd/encounters', controller.createEncounter as any);
 router.get('/opd/encounters', controller.getEncounters as any);
-router.get('/opd/queue', controller.getQueue as any);
+router.get('/opd/queue', authorizeRoles(['Doctor', 'Nurse', 'OPD Clerk', 'Receptionist', 'Records Officer', 'Cashier', 'Laboratory Scientist', 'Lab Technician', 'Scientist', 'Pharmacist', 'Eye Clinic']) as any, controller.getQueue as any);
 router.post('/opd/consultations/save-notes', controller.saveDoctorNotes as any);
 router.post('/opd/queue/save-notes', controller.saveDoctorNotes as any);
 
 // Select / Start Consultation for a patient (strictly patient-specific, prevents multiple active consultations under same doctor)
-router.post('/opd/queue/:id/select', async (req: any, res: any) => {
+router.post('/opd/queue/:id/select', authorizeRoles(['Doctor']) as any, async (req: any, res: any) => {
   try {
     const { id } = req.params;
     const doctorName = req.body.doctorName || req.user?.username || 'Doctor';
@@ -108,7 +108,7 @@ router.post('/opd/queue/:id/select', async (req: any, res: any) => {
 });
 
 // Exit / Hold Consultation for a patient
-router.post('/opd/queue/:id/exit', async (req: any, res: any) => {
+router.post('/opd/queue/:id/exit', authorizeRoles(['Doctor']) as any, async (req: any, res: any) => {
   try {
     const { id } = req.params;
     const doctorName = req.body.doctorName || req.user?.username || 'Doctor';
@@ -155,7 +155,7 @@ router.post('/opd/queue/:id/exit', async (req: any, res: any) => {
 });
 
 // Route Laboratory Orders to Cashier without completing or ending the active consultation
-router.post('/opd/queue/order-labs', async (req: any, res: any) => {
+router.post('/opd/queue/order-labs', authorizeRoles(['Doctor']) as any, async (req: any, res: any) => {
   try {
     const { patientId, encounterId, orderedTests } = req.body;
     const doctorName = req.user?.username || req.body.doctorName || 'Doctor';
@@ -277,7 +277,7 @@ router.post('/opd/queue/order-labs', async (req: any, res: any) => {
 });
 
 // Route Prescriptions / Medications to Cashier without ending the active consultation
-router.post('/opd/queue/order-medications', async (req: any, res: any) => {
+router.post('/opd/queue/order-medications', authorizeRoles(['Doctor']) as any, async (req: any, res: any) => {
   try {
     const { patientId, encounterId, prescribedMedications } = req.body;
     const doctorName = req.user?.username || req.body.doctorName || 'Doctor';
@@ -399,21 +399,27 @@ router.post('/opd/queue/order-medications', async (req: any, res: any) => {
   }
 });
 
-router.get('/opd/queue/lab-orders', controller.getLabOrders as any);
-router.get('/opd/queue/lab-results', controller.getLabResults as any);
-router.get('/opd/queue/pharmacy-orders', controller.getPharmacyOrders as any);
-router.post('/opd/queue/vitals', controller.recordOPDVitals as any);
-router.post('/opd/queue/consultation-complete', controller.completeConsultation as any);
-router.post('/opd/queue/lab-complete', controller.completeLaboratoryTest as any);
-router.post('/opd/queue/pharmacy-complete', controller.completePharmacyDispense as any);
-router.post('/opd/queue/priority', controller.updateEncounterPriority as any);
-router.post('/opd/cards/replace', controller.requestCardReplacement as any);
-router.get('/opd/cards/replacements', controller.getCardReplacements as any);
-router.get('/opd/duplicates', controller.checkDuplicates as any);
+router.get('/opd/queue/lab-orders', authorizeRoles(['Doctor', 'Laboratory Scientist', 'Lab Technician', 'Scientist', 'Pharmacist', 'Nurse', 'Cashier']) as any, controller.getLabOrders as any);
+router.get('/opd/queue/lab-results', authorizeRoles(['Doctor', 'Laboratory Scientist', 'Lab Technician', 'Scientist', 'Pharmacist', 'Nurse', 'Cashier']) as any, controller.getLabResults as any);
+router.get('/opd/queue/pharmacy-orders', authorizeRoles(['Doctor', 'Laboratory Scientist', 'Lab Technician', 'Scientist', 'Pharmacist', 'Nurse', 'Cashier']) as any, controller.getPharmacyOrders as any);
+router.post('/opd/queue/vitals', authorizeRoles(['Nurse', 'OPD Clerk', 'Receptionist', 'Records Officer', 'Doctor']) as any, controller.recordOPDVitals as any);
+router.post('/opd/queue/consultation-complete', authorizeRoles(['Doctor']) as any, controller.completeConsultation as any);
+router.post('/opd/queue/lab-complete', authorizeRoles(['Laboratory Scientist', 'Lab Technician', 'Scientist']) as any, controller.completeLaboratoryTest as any);
+// Doctor included intentionally to match Phase 4 "Admitted Orders fully actionable for
+// Doctor" (admitted scoping is frontend-enforced). Admin/IT/Management bypass is automatic.
+router.post('/opd/queue/pharmacy-complete', authorizeRoles(['Pharmacist', 'Doctor']) as any, controller.completePharmacyDispense as any);
+router.post('/opd/queue/priority', authorizeRoles(['Doctor', 'Nurse', 'OPD Clerk', 'Receptionist', 'Records Officer']) as any, controller.updateEncounterPriority as any);
+// NOTE (Phase 5 Finance read-only, Cashier collects): authorizeRoles(['Cashier']) admits
+// Cashier-group (Cashier + Account Officer + Accountant) via ROLE_EQUIVALENTS
+// (auth.middleware.ts:51-53). "Cashier collects" therefore means Cashier-group;
+// Finance read-only is a frontend presentation layer on top. Do not break equivalents.
+router.post('/opd/cards/replace', authorizeRoles(['OPD Clerk', 'Receptionist', 'Records Officer', 'Cashier']) as any, controller.requestCardReplacement as any);
+router.get('/opd/cards/replacements', authorizeRoles(['OPD Clerk', 'Receptionist', 'Records Officer', 'Cashier']) as any, controller.getCardReplacements as any);
+router.get('/opd/duplicates', authorizeRoles(['Doctor', 'Nurse', 'OPD Clerk', 'Receptionist', 'Records Officer', 'Cashier', 'Laboratory Scientist', 'Lab Technician', 'Scientist', 'Pharmacist', 'Eye Clinic']) as any, controller.checkDuplicates as any);
 router.get('/dashboard/stats', controller.getDashboardStats as any);
 
 // Search patients by name, hospital_number, phone, or id_number (for Returning Patients)
-router.get('/search/returning', async (req: any, res: any) => {
+router.get('/search/returning', authorizeRoles(['Doctor', 'Nurse', 'OPD Clerk', 'Receptionist', 'Records Officer', 'Cashier', 'Laboratory Scientist', 'Lab Technician', 'Scientist', 'Pharmacist', 'Eye Clinic']) as any, async (req: any, res: any) => {
   try {
     const q = req.query.q || req.query.query;
     if (!q || typeof q !== 'string' || q.trim().length === 0) {

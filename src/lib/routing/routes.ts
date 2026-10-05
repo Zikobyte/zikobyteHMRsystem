@@ -192,7 +192,7 @@ export function getDefaultTab(user: User): string {
     return 'lab';
   if (user.role === 'Doctor')
     return user.department === 'Eye Clinic' ? 'registered-patients' : 'consult';
-  if (user.role === 'Cashier' || user.department === 'Cashier' || user.department === 'Finance')
+  if (user.role === 'Cashier' || user.department === 'Cashier')
     return 'cashier';
   if (user.role === 'Pharmacist' || user.department === 'Pharmacy') return 'pharmacy';
   if (user.role === 'Nurse' || user.department === 'Nursing') return 'admitted-patients';
@@ -203,7 +203,7 @@ export function getDefaultTab(user: User): string {
     user.department === 'OPD'
   )
     return 'dashboard';
-  if (user.role === 'Account Officer' || user.role === 'Accountant' || user.department === 'Accounts')
+  if (user.role === 'Account Officer' || user.role === 'Accountant' || user.department === 'Accounts' || user.department === 'Finance')
     return 'overview';
   if (
     user.role === 'HR Manager' ||

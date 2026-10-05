@@ -132,6 +132,24 @@ export default function LaboratoryView({ activeTab: propActiveTab }: { activeTab
     details?: { label: string; value: string }[];
   } | null>(null);
 
+  // 403-avoidance gate: POST /opd/queue/lab-complete is Lab-only (patients.routes.ts:407).
+  // The view is routable by doctor dept, so non-lab roles get a disabled submit + note.
+  // Results viewing stays intact. Presentation-only: no backend change.
+  const [currentUserRole, setCurrentUserRole] = useState<string | null>(null);
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('zmc_user');
+      if (saved) setCurrentUserRole(JSON.parse(saved)?.role ?? null);
+    } catch {
+      setCurrentUserRole(null);
+    }
+  }, []);
+  const LAB_RESULT_SUBMIT_ROLES = ['Laboratory Scientist', 'Lab Technician', 'Scientist', 'Laboratory'];
+  const LAB_RESULT_ADMIN_BYPASS = ['Administrator', 'IT Administrator', 'Management', 'Super Administrator'];
+  const canSubmitLabResults =
+    !!currentUserRole &&
+    ([...LAB_RESULT_SUBMIT_ROLES, ...LAB_RESULT_ADMIN_BYPASS] as string[]).includes(currentUserRole);
+
   useEffect(() => {
     fetchRegularQueue();
     fetchWalkInQueue();
@@ -714,7 +732,7 @@ export default function LaboratoryView({ activeTab: propActiveTab }: { activeTab
                     const isSelected = selectedRegularPatient?.id === patient.id;
                     const name = patient.patient_name || patient.name || 'Patient';
                     const id = patient.hospital_number || patient.patient_id || patient.id;
-                    const phone = patient.phone_number || '08035006005';
+                    const phone = patient.phone_number || '—';
 
                     return (
                       <button
@@ -759,14 +777,14 @@ export default function LaboratoryView({ activeTab: propActiveTab }: { activeTab
                   {/* Patient Info Header */}
                   <div className="bg-slate-50/80 p-5 rounded-2xl border border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                     <div>
-                      <h3 className="text-lg font-black text-slate-900">{selectedRegularPatient.patient_name || selectedRegularPatient.name || 'Chiamaka Ike'}</h3>
+                      <h3 className="text-lg font-black text-slate-900">{selectedRegularPatient.patient_name || selectedRegularPatient.name || 'Patient'}</h3>
                       <div className="flex flex-wrap items-center gap-3 text-xs text-slate-600 font-medium mt-1">
                         <span className="font-mono bg-slate-200/70 px-2 py-0.5 rounded-md font-bold text-slate-800">
-                          ID: {selectedRegularPatient.hospital_number || selectedRegularPatient.patient_id || 'PAT-8005'}
+                          ID: {selectedRegularPatient.hospital_number || selectedRegularPatient.patient_id || '—'}
                         </span>
                         <span className="flex items-center gap-1">
                           <Phone className="h-3.5 w-3.5 text-slate-400" />
-                          {selectedRegularPatient.phone_number || '08035006005'}
+                          {selectedRegularPatient.phone_number || '—'}
                         </span>
                       </div>
                     </div>
@@ -779,7 +797,7 @@ export default function LaboratoryView({ activeTab: propActiveTab }: { activeTab
                   <div className="bg-amber-50/60 p-4 rounded-2xl border border-amber-100 space-y-1">
                     <span className="text-[11px] font-extrabold text-amber-900 uppercase tracking-wider font-mono block">Doctor's Notes</span>
                     <p className="text-xs text-amber-950 font-medium leading-relaxed">
-                      {doctorNotes || 'Suspected H. Pylori infection and possible anaemia. Order HP and Hb.'}
+                      {doctorNotes || 'No notes recorded.'}
                     </p>
                   </div>
 
@@ -833,8 +851,9 @@ export default function LaboratoryView({ activeTab: propActiveTab }: { activeTab
 
                     <button
                       type="submit"
-                      disabled={isSubmittingRegular}
-                      className="w-full py-3.5 px-6 rounded-2xl bg-[#2A758C] hover:bg-[#1f5869] text-white text-xs font-bold transition-all shadow-md hover:shadow-lg flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                      disabled={isSubmittingRegular || !canSubmitLabResults}
+                      title={!canSubmitLabResults ? 'Laboratory staff only' : undefined}
+                      className="w-full py-3.5 px-6 rounded-2xl bg-[#2A758C] hover:bg-[#1f5869] text-white text-xs font-bold transition-all shadow-md hover:shadow-lg flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       {isSubmittingRegular ? (
                         <>
@@ -848,6 +867,9 @@ export default function LaboratoryView({ activeTab: propActiveTab }: { activeTab
                         </>
                       )}
                     </button>
+                    {!canSubmitLabResults && (
+                      <p className="text-[11px] text-slate-500 font-medium">Laboratory staff only — results are read-only for your role.</p>
+                    )}
                   </form>
                 </div>
               )}
@@ -1255,8 +1277,9 @@ export default function LaboratoryView({ activeTab: propActiveTab }: { activeTab
                     </button>
                     <button
                       type="submit"
-                      disabled={isSubmittingWalkInResults}
-                      className="px-5 py-2.5 text-xs font-bold text-white bg-[#2A758C] hover:bg-[#1f5869] rounded-xl shadow-xs flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                      disabled={isSubmittingWalkInResults || !canSubmitLabResults}
+                      title={!canSubmitLabResults ? 'Laboratory staff only' : undefined}
+                      className="px-5 py-2.5 text-xs font-bold text-white bg-[#2A758C] hover:bg-[#1f5869] rounded-xl shadow-xs flex items-center gap-1.5 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       {isSubmittingWalkInResults ? (
                         <>
@@ -1271,6 +1294,9 @@ export default function LaboratoryView({ activeTab: propActiveTab }: { activeTab
                       )}
                     </button>
                   </div>
+                  {!canSubmitLabResults && (
+                    <p className="text-[11px] text-slate-500 font-medium text-right">Laboratory staff only — results are read-only for your role.</p>
+                  )}
                 </form>
               </div>
             </div>

@@ -1,5 +1,5 @@
 import { Response } from 'express';
-import { AuthenticatedRequest } from '../../middleware/auth.middleware';
+import { AuthenticatedRequest, isRoleAuthorized } from '../../middleware/auth.middleware';
 import { PatientsService } from './patients.service';
 import { broadcastNotification } from '../../utils/ws.util';
 
@@ -301,6 +301,17 @@ export class PatientsController {
   public getDashboardStats = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
     try {
       const data = await this.service.getDashboardStats();
+      // Minimum-necessary (NDPR): totalRevenue is finance-sensitive — mirror the
+      // payments revenue-verification roles (payments.routes.ts: /revenue-verification).
+      // isRoleAuthorized(['Cashier']) covers Cashier + Account Officer + Accountant
+      // via ROLE_EQUIVALENTS, plus Administrator / IT Administrator / Management /
+      // Super Administrator via admin bypass. All other roles get stats without revenue.
+      const role = req.user?.role || '';
+      if (!isRoleAuthorized(role, ['Cashier'])) {
+        const { totalRevenue: _omitted, ...safeData } = data || {};
+        res.status(200).json({ success: true, data: safeData });
+        return;
+      }
       res.status(200).json({ success: true, data });
     } catch (error: any) {
       res.status(500).json({ success: false, error: error.message });
