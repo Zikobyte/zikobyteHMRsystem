@@ -1,0 +1,485 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>ZMC EHR Server Storage Report — 5 Year Projection</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: Arial, sans-serif; color: #1a1a2e; background: #fff; font-size: 13px; }
+  .cover { background: linear-gradient(135deg, #1e3a8a, #1d4ed8); color: white; padding: 60px 50px; }
+  .cover h1 { font-size: 28px; margin-bottom: 8px; }
+  .cover h2 { font-size: 16px; opacity: 0.8; margin-bottom: 20px; }
+  .cover p { font-size: 12px; opacity: 0.6; }
+  .content { padding: 40px 50px; }
+  h2 { font-size: 16px; color: #1e3a8a; border-bottom: 2px solid #1e3a8a; padding-bottom: 6px; margin: 30px 0 14px; }
+  h3 { font-size: 14px; color: #1e3a8a; margin: 20px 0 10px; }
+  table { width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 12px; }
+  th { background: #1e3a8a; color: white; padding: 8px 10px; text-align: left; }
+  td { padding: 7px 10px; border-bottom: 1px solid #e5e7eb; vertical-align: top; }
+  tr:nth-child(even) td { background: #f9fafb; }
+  .summary-box { background: #eff6ff; border: 2px solid #3b82f6; border-radius: 8px; padding: 20px; margin: 20px 0; }
+  .summary-box .big { font-size: 32px; font-weight: bold; color: #1e3a8a; }
+  .summary-box .label { font-size: 12px; color: #6b7280; margin-bottom: 6px; }
+  .final-box { background: #1e3a8a; color: white; border-radius: 8px; padding: 28px; margin: 24px 0; text-align: center; }
+  .final-box .value { font-size: 48px; font-weight: bold; }
+  .final-box .sub { opacity: 0.7; font-size: 13px; margin-top: 6px; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin: 20px 0; }
+  .card { border: 1px solid #e5e7eb; border-radius: 8px; padding: 16px; }
+  .card h4 { font-size: 13px; margin-bottom: 10px; color: #1e3a8a; }
+  .card ul { padding-left: 16px; font-size: 12px; color: #4b5563; line-height: 1.8; }
+  .assumption-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 16px; }
+  .assumption-item { background: #fef3c7; border: 1px solid #fde68a; border-radius: 6px; padding: 10px; font-size: 11px; }
+  .assumption-item .val { font-weight: bold; font-size: 13px; color: #92400e; }
+  .assumption-item .lbl { color: #78350f; margin-bottom: 4px; }
+  footer { text-align: center; font-size: 10px; color: #9ca3af; border-top: 1px solid #e5e7eb; padding: 20px; margin-top: 30px; }
+  .step { display: flex; gap: 14px; align-items: flex-start; margin-bottom: 12px; background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px; padding: 12px; }
+  .step-num { background: #1e3a8a; color: white; width: 26px; height: 26px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 12px; flex-shrink: 0; }
+  .step-val { font-weight: bold; font-size: 15px; color: #1e3a8a; white-space: nowrap; }
+</style>
+</head>
+<body>
+
+<div class="cover">
+  <h1>Server Storage Requirements</h1>
+  <h2>ZMC Hospital Management EHR System — 5-Year Projection (2026–2030)</h2>
+  <p>Prepared: June 17, 2026 &nbsp;|&nbsp; Version 1.0 &nbsp;|&nbsp; CONFIDENTIAL</p>
+</div>
+
+<div class="content">
+
+  <h2>1. Executive Summary</h2>
+  <p>This report provides a detailed server storage calculation for the ZMC Hospital Management Intranet EHR Solution. The system encompasses OPD registration, clinical consultations, nursing/inpatient management, laboratory, pharmacy, cashier/billing, HR management, and eye clinic modules. Storage estimates are based on realistic daily transaction volumes for a medium-sized hospital facility.</p>
+
+  <div class="final-box">
+    <div class="label" style="color:#93c5fd">TOTAL RECOMMENDED SERVER STORAGE — 5 YEARS</div>
+    <div class="value">400.00 GB</div>
+    <div class="sub">Across 3-server redundant architecture (Primary + On-Site Backup + Off-Site Backup)</div>
+  </div>
+
+  <h2>2. Base Assumptions</h2>
+  <div class="assumption-grid">
+    <div class="assumption-item"><div class="lbl">Daily OPD Patients</div><div class="val">~120 visits/day</div></div><div class="assumption-item"><div class="lbl">Active Inpatients</div><div class="val">~40 admitted</div></div><div class="assumption-item"><div class="lbl">Lab Tests/Day</div><div class="val">~80 tests</div></div><div class="assumption-item"><div class="lbl">Pharmacy Dispenses</div><div class="val">~90/day</div></div><div class="assumption-item"><div class="lbl">Eye Clinic Patients</div><div class="val">~25/day</div></div><div class="assumption-item"><div class="lbl">Emergency Cases</div><div class="val">~10/day</div></div><div class="assumption-item"><div class="lbl">Maternity Cases</div><div class="val">~15/day</div></div><div class="assumption-item"><div class="lbl">Staff Count</div><div class="val">~200 employees</div></div>
+  </div>
+
+  <h2>3. Module Summary</h2>
+  <table>
+    <thead><tr><th>Module Category</th><th>Record Types</th><th>Storage / Year</th><th>Storage / 5 Years</th></tr></thead>
+    <tbody><tr><td><strong>OPD / Registration</strong></td><td>4</td><td>0.96 GB</td><td>4.82 GB</td></tr><tr><td><strong>Doctor / Clinical</strong></td><td>3</td><td>0.91 GB</td><td>4.56 GB</td></tr><tr><td><strong>Nursing / Inpatient</strong></td><td>7</td><td>1.34 GB</td><td>6.71 GB</td></tr><tr><td><strong>Laboratory</strong></td><td>3</td><td>3.18 GB</td><td>15.91 GB</td></tr><tr><td><strong>Pharmacy</strong></td><td>3</td><td>0.36 GB</td><td>1.81 GB</td></tr><tr><td><strong>Cashier / Billing</strong></td><td>3</td><td>0.75 GB</td><td>3.74 GB</td></tr><tr><td><strong>HR Management</strong></td><td>4</td><td>0.31 GB</td><td>1.54 GB</td></tr><tr><td><strong>Eye Clinic</strong></td><td>1</td><td>0.18 GB</td><td>0.91 GB</td></tr><tr><td><strong>System / Infrastructure</strong></td><td>4</td><td>7.65 GB</td><td>38.25 GB</td></tr></tbody>
+    <tfoot><tr style="background:#1e3a8a;color:white"><td><strong>TOTAL RAW DATA</strong></td><td>32</td><td>15.65 GB</td><td><strong>78.25 GB</strong></td></tr></tfoot>
+  </table>
+
+  <h2>4. Detailed Storage Breakdown</h2>
+  <table>
+    <thead><tr><th>Category</th><th>Module / Record Type</th><th>Record Size</th><th>Records/Day</th><th>Per Year</th><th>5-Year Total</th><th>Notes</th></tr></thead>
+    <tbody>
+    <tr>
+      <td>OPD / Registration</td>
+      <td>Patient Demographics & Registration</td>
+      <td>15KB</td>
+      <td>120</td>
+      <td>0.66 GB</td>
+      <td>3.30 GB</td>
+      <td>Name, DOB, address, ID, marital status, contact, card type</td>
+    </tr>
+  
+    <tr>
+      <td>OPD / Registration</td>
+      <td>Vitals & Triage Records</td>
+      <td>5KB</td>
+      <td>120</td>
+      <td>0.22 GB</td>
+      <td>1.10 GB</td>
+      <td>BP, HR, temp, RR, SpO2, weight, height per visit</td>
+    </tr>
+  
+    <tr>
+      <td>OPD / Registration</td>
+      <td>Maternity-specific Records</td>
+      <td>10KB</td>
+      <td>15</td>
+      <td>0.06 GB</td>
+      <td>0.27 GB</td>
+      <td>Gravida, para, LMP, EDD, gestational age, tribe, occupation</td>
+    </tr>
+  
+    <tr>
+      <td>OPD / Registration</td>
+      <td>Emergency Case Records</td>
+      <td>8KB</td>
+      <td>10</td>
+      <td>0.03 GB</td>
+      <td>0.15 GB</td>
+      <td>Emergency flags, cash confirmation, attending staff</td>
+    </tr>
+  
+    <tr>
+      <td>Doctor / Clinical</td>
+      <td>Consultation Notes & Diagnoses</td>
+      <td>20KB</td>
+      <td>100</td>
+      <td>0.73 GB</td>
+      <td>3.65 GB</td>
+      <td>Doctor notes, diagnoses, orders, referrals, ICD codes</td>
+    </tr>
+  
+    <tr>
+      <td>Doctor / Clinical</td>
+      <td>Medication Orders (OPD)</td>
+      <td>4KB</td>
+      <td>80</td>
+      <td>0.12 GB</td>
+      <td>0.58 GB</td>
+      <td>Drug name, dosage, frequency, quantity, price per prescription</td>
+    </tr>
+  
+    <tr>
+      <td>Doctor / Clinical</td>
+      <td>Lab Test Orders</td>
+      <td>3KB</td>
+      <td>60</td>
+      <td>0.07 GB</td>
+      <td>0.33 GB</td>
+      <td>Test name, category, ordering doctor, timestamp</td>
+    </tr>
+  
+    <tr>
+      <td>Nursing / Inpatient</td>
+      <td>Nursing Observations</td>
+      <td>6KB</td>
+      <td>80</td>
+      <td>0.17 GB</td>
+      <td>0.88 GB</td>
+      <td>Wound, general, complaint, other observations per shift</td>
+    </tr>
+  
+    <tr>
+      <td>Nursing / Inpatient</td>
+      <td>Inpatient Vitals (per shift)</td>
+      <td>5KB</td>
+      <td>160</td>
+      <td>0.29 GB</td>
+      <td>1.46 GB</td>
+      <td>3 readings/day per admitted patient (avg 40 admitted)</td>
+    </tr>
+  
+    <tr>
+      <td>Nursing / Inpatient</td>
+      <td>Admission Records (ward/bed)</td>
+      <td>10KB</td>
+      <td>20</td>
+      <td>0.07 GB</td>
+      <td>0.36 GB</td>
+      <td>Admission date, ward, bed, next of kin, religion, detention status</td>
+    </tr>
+  
+    <tr>
+      <td>Nursing / Inpatient</td>
+      <td>Medication Administrations</td>
+      <td>4KB</td>
+      <td>200</td>
+      <td>0.29 GB</td>
+      <td>1.46 GB</td>
+      <td>Drug, dose, time administered, nurse ID, notes</td>
+    </tr>
+  
+    <tr>
+      <td>Nursing / Inpatient</td>
+      <td>Inpatient Orders (medication/lab/injection)</td>
+      <td>5KB</td>
+      <td>100</td>
+      <td>0.18 GB</td>
+      <td>0.91 GB</td>
+      <td>Order items, type, status, ordering doctor, dispense status</td>
+    </tr>
+  
+    <tr>
+      <td>Nursing / Inpatient</td>
+      <td>Discharge Records</td>
+      <td>8KB</td>
+      <td>18</td>
+      <td>0.05 GB</td>
+      <td>0.26 GB</td>
+      <td>Discharge date, summary, requesting staff, detention clearance</td>
+    </tr>
+  
+    <tr>
+      <td>Nursing / Inpatient</td>
+      <td>Admission Charges (billing per procedure)</td>
+      <td>3KB</td>
+      <td>250</td>
+      <td>0.27 GB</td>
+      <td>1.37 GB</td>
+      <td>Per-line charge: medication, procedure, consumable, investigation</td>
+    </tr>
+  
+    <tr>
+      <td>Laboratory</td>
+      <td>Lab Test Results (text-based)</td>
+      <td>12KB</td>
+      <td>80</td>
+      <td>0.35 GB</td>
+      <td>1.75 GB</td>
+      <td>FBC, urinalysis, malaria, biochemistry, microbiology results</td>
+    </tr>
+  
+    <tr>
+      <td>Laboratory</td>
+      <td>Lab Result Attachments (PDF/image)</td>
+      <td>500KB</td>
+      <td>15</td>
+      <td>2.74 GB</td>
+      <td>13.70 GB</td>
+      <td>Printed result scans, specialized test reports</td>
+    </tr>
+  
+    <tr>
+      <td>Laboratory</td>
+      <td>Lab Direct Patient Records</td>
+      <td>10KB</td>
+      <td>25</td>
+      <td>0.09 GB</td>
+      <td>0.46 GB</td>
+      <td>Walk-in lab patients, external doctor orders</td>
+    </tr>
+  
+    <tr>
+      <td>Pharmacy</td>
+      <td>Dispensing Records</td>
+      <td>5KB</td>
+      <td>90</td>
+      <td>0.16 GB</td>
+      <td>0.82 GB</td>
+      <td>Drugs dispensed, quantity, price, pharmacist ID, timestamp</td>
+    </tr>
+  
+    <tr>
+      <td>Pharmacy</td>
+      <td>Procurement & Inventory Transactions</td>
+      <td>8KB</td>
+      <td>30</td>
+      <td>0.09 GB</td>
+      <td>0.44 GB</td>
+      <td>Procurement orders, items, unit prices, supplier, status</td>
+    </tr>
+  
+    <tr>
+      <td>Pharmacy</td>
+      <td>Medication Stock Logs</td>
+      <td>3KB</td>
+      <td>100</td>
+      <td>0.11 GB</td>
+      <td>0.55 GB</td>
+      <td>Stock in/out transactions, batch numbers, expiry tracking</td>
+    </tr>
+  
+    <tr>
+      <td>Cashier / Billing</td>
+      <td>Payment Records</td>
+      <td>5KB</td>
+      <td>150</td>
+      <td>0.27 GB</td>
+      <td>1.37 GB</td>
+      <td>Payment type, amount, partial payment, status, timestamp</td>
+    </tr>
+  
+    <tr>
+      <td>Cashier / Billing</td>
+      <td>Receipts & Invoice Records</td>
+      <td>8KB</td>
+      <td>150</td>
+      <td>0.44 GB</td>
+      <td>2.19 GB</td>
+      <td>Receipt number, items billed, amounts, cashier ID</td>
+    </tr>
+  
+    <tr>
+      <td>Cashier / Billing</td>
+      <td>Account Officer Financial Reports</td>
+      <td>50KB</td>
+      <td>2</td>
+      <td>0.04 GB</td>
+      <td>0.18 GB</td>
+      <td>Daily summaries, revenue reports, department breakdowns</td>
+    </tr>
+  
+    <tr>
+      <td>HR Management</td>
+      <td>Employee Records</td>
+      <td>25KB</td>
+      <td>1</td>
+      <td>9.2 MB</td>
+      <td>0.05 GB</td>
+      <td>Profile, role, shift, contact, join date (est. 200 staff)</td>
+    </tr>
+  
+    <tr>
+      <td>HR Management</td>
+      <td>Employee Documents (contracts/certs)</td>
+      <td>800KB</td>
+      <td>1</td>
+      <td>0.29 GB</td>
+      <td>1.46 GB</td>
+      <td>Scanned certifications, contracts, licenses per employee</td>
+    </tr>
+  
+    <tr>
+      <td>HR Management</td>
+      <td>Absence & Leave Records</td>
+      <td>2KB</td>
+      <td>5</td>
+      <td>4.1 MB</td>
+      <td>0.02 GB</td>
+      <td>Sick, personal, vacation, unauthorized leaves</td>
+    </tr>
+  
+    <tr>
+      <td>HR Management</td>
+      <td>Job Requisitions & Candidates</td>
+      <td>10KB</td>
+      <td>1</td>
+      <td>4.1 MB</td>
+      <td>0.02 GB</td>
+      <td>Openings, departments, candidate profiles, notes</td>
+    </tr>
+  
+    <tr>
+      <td>Eye Clinic</td>
+      <td>Eye Clinic Patient Records</td>
+      <td>20KB</td>
+      <td>25</td>
+      <td>0.18 GB</td>
+      <td>0.91 GB</td>
+      <td>Eye-specific consultation notes, prescriptions, follow-ups</td>
+    </tr>
+  
+    <tr>
+      <td>System / Infrastructure</td>
+      <td>Application Audit Logs</td>
+      <td>1KB</td>
+      <td>5,000</td>
+      <td>1.82 GB</td>
+      <td>9.13 GB</td>
+      <td>Every user action: login, edit, view, discharge, payment</td>
+    </tr>
+  
+    <tr>
+      <td>System / Infrastructure</td>
+      <td>System Event Logs</td>
+      <td>0.5KB</td>
+      <td>10,000</td>
+      <td>1.82 GB</td>
+      <td>9.13 GB</td>
+      <td>Server events, API calls, error logs, session tracking</td>
+    </tr>
+  
+    <tr>
+      <td>System / Infrastructure</td>
+      <td>Database Indices & Metadata</td>
+      <td>—</td>
+      <td>—</td>
+      <td>2.00 GB</td>
+      <td>10.00 GB</td>
+      <td>Index overhead (~20% of total DB), foreign keys, views</td>
+    </tr>
+  
+    <tr>
+      <td>System / Infrastructure</td>
+      <td>Application & OS Files</td>
+      <td>—</td>
+      <td>—</td>
+      <td>2.00 GB</td>
+      <td>10.00 GB</td>
+      <td>Application binaries, OS, configs, updates, libraries</td>
+    </tr>
+  </tbody>
+  </table>
+
+  <h2>5. Storage Calculation Steps</h2>
+
+  <div class="step">
+    <div class="step-num">1</div>
+    <div style="flex:1">
+      <strong>Raw Data (All Modules, 5 Years)</strong><br/>
+      <span style="font-size:11px;color:#6b7280">Sum of all patient, clinical, billing, HR, lab, pharmacy and audit records over 5 years</span>
+    </div>
+    <div class="step-val">78.25 GB</div>
+  </div>
+
+  <div class="step">
+    <div class="step-num">2</div>
+    <div style="flex:1">
+      <strong>Add 25% Database Overhead</strong><br/>
+      <span style="font-size:11px;color:#6b7280">PostgreSQL/MySQL indexes, foreign key tables, query cache, materialized views, temp tables, MVCC row versions</span>
+    </div>
+    <div class="step-val">97.81 GB</div>
+  </div>
+
+  <div class="step">
+    <div class="step-num">3</div>
+    <div style="flex:1">
+      <strong>Multiply by 3 for Full Redundancy</strong><br/>
+      <span style="font-size:11px;color:#6b7280">Primary production server + on-site RAID backup server + off-site/cloud disaster recovery</span>
+    </div>
+    <div class="step-val">293.44 GB</div>
+  </div>
+
+  <div class="step">
+    <div class="step-num">4</div>
+    <div style="flex:1">
+      <strong>Add 20% Future Growth Buffer</strong><br/>
+      <span style="font-size:11px;color:#6b7280">Accounts for unexpected data growth, new modules, reporting tables, increased patient volumes</span>
+    </div>
+    <div class="step-val">400.00 GB</div>
+  </div>
+
+  <h2>6. Recommended Server Configuration</h2>
+  <table>
+    <thead><tr><th>Server Role</th><th>Storage Capacity</th><th>Drive Configuration</th><th>Drive Type</th><th>Purpose</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Primary Application Server</strong></td><td>133.33 GB</td><td>2× 1TB SSD (RAID 1)</td><td>NVMe SSD</td><td>Live database, application, OS</td></tr>
+      <tr><td><strong>On-Site Backup Server</strong></td><td>133.33 GB</td><td>4× 2TB HDD (RAID 5)</td><td>SATA HDD</td><td>Daily automated backups, point-in-time recovery</td></tr>
+      <tr><td><strong>Off-Site / Cloud Backup</strong></td><td>133.33 GB</td><td>NAS or Cloud Storage</td><td>Cloud / NAS</td><td>Disaster recovery, monthly archives</td></tr>
+    </tbody>
+    <tfoot><tr style="background:#1e3a8a;color:white"><td><strong>TOTAL PROVISIONED</strong></td><td><strong>400.00 GB</strong></td><td colspan="3">3-server redundant architecture</td></tr></tfoot>
+  </table>
+
+  <div class="grid">
+    <div class="card">
+      <h4>✓ Best Practices Included</h4>
+      <ul>
+        <li>RAID 1 mirroring on primary — zero downtime on disk failure</li>
+        <li>RAID 5 on backup — space-efficient with single-disk tolerance</li>
+        <li>Daily incremental + weekly full backup schedule</li>
+        <li>AES-256 encryption for all patient records (HIPAA-aligned)</li>
+        <li>Separate tablespaces: audit logs vs clinical data</li>
+        <li>5-year retention policy with automated archiving</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h4>→ Growth Considerations</h4>
+      <ul>
+        <li>Digital radiology (DICOM): adds 2–5 TB/year if implemented</li>
+        <li>Telemedicine recordings: ~500 MB per recorded session</li>
+        <li>Patient portal attachments: ~50 MB per active patient</li>
+        <li>Report exports (Excel/PDF): ~5 GB/year accumulation</li>
+        <li>Re-evaluate storage annually at 70% capacity threshold</li>
+        <li>Consider SAN/NAS expansion for scalability beyond 5 years</li>
+      </ul>
+    </div>
+  </div>
+
+  <h2>7. Important Notes</h2>
+  <p style="line-height:1.8;color:#374151">
+    This report does not include storage for <strong>medical imaging (DICOM/PACS)</strong> — digital X-rays, CT scans, MRIs, and ultrasound images — as ZMC currently uses paper-based or separate imaging systems. If digital imaging is integrated into the EHR in the future, storage requirements could increase by <strong>2–10 TB per year</strong> depending on imaging volume. A separate DICOM storage server (PACS server) should be planned for at that stage.
+    <br/><br/>
+    All figures are conservative estimates based on ZMC's current operational scope. Actual consumption will vary based on patient volumes, data entry verbosity, and module usage patterns.
+  </p>
+
+</div>
+
+<footer>
+  ZMC Hospital Management EHR System — Server Storage Report v1.0 &nbsp;|&nbsp; Generated June 17, 2026 &nbsp;|&nbsp; Confidential — For Internal Use Only
+</footer>
+
+</body>
+</html>

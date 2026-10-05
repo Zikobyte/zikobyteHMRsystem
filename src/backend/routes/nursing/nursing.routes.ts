@@ -1,35 +1,12 @@
-import { Router, Request, Response, NextFunction } from 'express';
-import jwt from 'jsonwebtoken';
-import { AuthenticatedRequest } from '../../middleware/auth.middleware';
+import { Router, Request, Response } from 'express';
+import { AuthenticatedRequest, authenticateJWT, authorizeRoles } from '../../middleware/auth.middleware';
 import { getPostgresPool, getDB, generateUUID } from '../../database/db.repo';
-import { JWT_SECRET } from '../../config/env';
 
 export const nursingRoutes = Router();
 
-// Middleware: authenticate token if available, but allow graceful continuation for nursing operations
-nursingRoutes.use((req: AuthenticatedRequest, res: Response, next: NextFunction) => {
-  const authHeader = req.headers.authorization;
-  if (authHeader && authHeader.startsWith('Bearer ')) {
-    const token = authHeader.split(' ')[1];
-    try {
-      const decoded = jwt.verify(token, JWT_SECRET) as any;
-      req.user = decoded;
-      return next();
-    } catch (error) {
-      // Invalid or expired token - fallback to default nurse session
-    }
-  }
-
-  // Graceful fallback for nursing intranet session if token missing or invalid
-  req.user = {
-    id: 'user-head-nurse-7',
-    username: 'nurse1',
-    role: 'Nurse',
-    name: 'Head Nurse',
-    department: 'Nursing'
-  };
-  next();
-});
+// All nursing routes require a valid JWT. Unauthenticated requests get 401
+// (previously a guest Nurse session was minted here — removed for PHI protection).
+nursingRoutes.use(authenticateJWT as any);
 
 // In-memory initial seed for admitted patients if not already initialized
 function ensureNursingSeed() {
@@ -63,6 +40,7 @@ function ensureNursingSeed() {
       status: 'Pending Handover',
       nurse_name: 'Nurse Faith (Maternity)',
       created_at: '2026-09-08T04:03:00.000Z',
+      handed_over_at: '2026-09-08T04:03:00.000Z',
       formatted_date: '08/09/2026, 04:03'
     });
   }
@@ -1197,7 +1175,7 @@ nursingRoutes.get('/admissions/:id/billing', async (req: AuthenticatedRequest, r
 // -------------------------------------------------------------
 // 6B. MATERNITY ADMISSION CHECKLIST & WARD SUPPLY BILLING
 // -------------------------------------------------------------
-nursingRoutes.get('/admissions/:id/maternity-checklist', async (req: AuthenticatedRequest, res: Response) => {
+nursingRoutes.get('/admissions/:id/maternity-checklist', authorizeRoles(['Nurse', 'Doctor']) as any, async (req: AuthenticatedRequest, res: Response) => {
   try {
     ensureNursingSeed();
     const { id } = req.params;
@@ -1226,7 +1204,7 @@ nursingRoutes.get('/admissions/:id/maternity-checklist', async (req: Authenticat
   }
 });
 
-nursingRoutes.post('/admissions/:id/maternity-checklist', async (req: AuthenticatedRequest, res: Response) => {
+nursingRoutes.post('/admissions/:id/maternity-checklist', authorizeRoles(['Nurse']) as any, async (req: AuthenticatedRequest, res: Response) => {
   try {
     ensureNursingSeed();
     const { id } = req.params;
@@ -1292,6 +1270,7 @@ nursingRoutes.post('/admissions/:id/maternity-checklist', async (req: Authentica
         status: 'Pending Handover',
         nurse_name: nurseName,
         created_at: new Date().toISOString(),
+        handed_over_at: new Date().toISOString(),
         formatted_date: new Date().toLocaleString('en-GB')
       };
 
@@ -1313,11 +1292,14 @@ nursingRoutes.post('/admissions/:id/maternity-checklist', async (req: Authentica
 // -------------------------------------------------------------
 // 6C. MATERNITY WARD SUPPLIES HANDOVER (CASHIER & NURSING PORTAL)
 // -------------------------------------------------------------
-nursingRoutes.get('/maternity-supplies', async (req: AuthenticatedRequest, res: Response) => {
+nursingRoutes.get('/maternity-supplies', authorizeRoles(['Nurse', 'Cashier', 'Account Officer', 'Accountant']) as any, async (req: AuthenticatedRequest, res: Response) => {
   try {
     ensureNursingSeed();
     const db = getDB() as any;
-    const handovers = db.maternitySupplyHandovers || [];
+    const handovers = (db.maternitySupplyHandovers || []).map((h: any) => ({
+      ...h,
+      handed_over_at: (h as any).handed_over_at ?? (h as any).formatted_date ?? (h as any).created_at ?? '—'
+    }));
     res.json({
       success: true,
       data: handovers
@@ -1328,7 +1310,8 @@ nursingRoutes.get('/maternity-supplies', async (req: AuthenticatedRequest, res: 
   }
 });
 
-nursingRoutes.post('/maternity-supplies/:id/balance', async (req: AuthenticatedRequest, res: Response) => {
+// Cashier-group equivalents admit Account Officer/Accountant — intentional, matches payments policy.
+nursingRoutes.post('/maternity-supplies/:id/balance', authorizeRoles(['Cashier']) as any, async (req: AuthenticatedRequest, res: Response) => {
   try {
     ensureNursingSeed();
     const { id } = req.params;

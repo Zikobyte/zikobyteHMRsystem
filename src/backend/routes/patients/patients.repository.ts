@@ -1431,6 +1431,24 @@ export class PatientsRepository {
       SELECT * FROM zmc_laboratory_orders
       WHERE encounter_id = $1 AND status = 'Pending'
     `, [encounterId]);
+    // Heal on read (in-memory only — no DB write-back): re-resolve catalogue
+    // price for rows with NULL/0/NaN price. resolveLabTestPrice is already
+    // imported top-level (lab-catalogue has no imports, so no cycle risk).
+    for (const row of res.rows) {
+      const price = Number(row.price);
+      if (!Number.isFinite(price) || price <= 0) {
+        const resolved = resolveLabTestPrice({ code: row.test_code, name: row.test_name });
+        if (resolved) {
+          row.price = resolved.price;
+          row.test_code = resolved.code;
+          row.needsPricing = false;
+        } else {
+          row.needsPricing = true;
+        }
+      } else {
+        row.needsPricing = false;
+      }
+    }
     return res.rows;
   }
 
