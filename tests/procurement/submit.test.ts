@@ -1,7 +1,7 @@
 import { describe, test, expect } from 'bun:test';
 import { readFile } from 'node:fs/promises';
 
-const pharmacyViewUrl = new URL('../../src/components/PharmacyView.tsx', import.meta.url);
+const pharmacyViewUrl = new URL('@/views/PharmacyView.tsx', import.meta.url);
 
 async function readSource(): Promise<string> {
   return await readFile(pharmacyViewUrl, 'utf8');
@@ -30,8 +30,8 @@ function stubBrowserGlobals(): void {
 
 async function loadHelpers() {
   stubBrowserGlobals();
-  const mod = await import('../../src/components/PharmacyView');
-  return mod as typeof import('../../src/components/PharmacyView');
+  const mod = await import('@/views/PharmacyView');
+  return mod as typeof import('@/views/PharmacyView');
 }
 
 describe('pharmacy procurement submit (honest failure)', () => {

@@ -40,7 +40,7 @@ import {
   Sparkles
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import ExportButton from '@/components/common/ExportButton';
+import ExportButton from "@/components/shared/ExportButton";
 import ReturningPatientView from './ReturningPatientView';
 import AdmissionsView from '@/components/AdmissionsView';
 import PatientDetailModal from "@/components/PatientDetailModal";

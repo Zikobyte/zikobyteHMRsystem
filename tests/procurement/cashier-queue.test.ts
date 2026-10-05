@@ -57,7 +57,7 @@ describe('cashier procurement queue (read-only)', () => {
 
   test('row mapping mirrors the GET /hr/procurements payload', async () => {
     stubBrowserGlobals();
-    const cashier = await import('../../src/components/CashierView');
+    const cashier = await import('@/views/CashierView');
     const map = cashier.mapCashierProcurementQueueRow as (raw: unknown) => {
       id: string;
       item: string;

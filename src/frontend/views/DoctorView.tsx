@@ -31,7 +31,7 @@ import { AnimatePresence, motion } from 'motion/react';
 import { useEffect, useState } from 'react';
 import { apiFetch, socketManager } from '@/utils/api';
 import DoctorSpecializedDirectory from '@/components/DoctorSpecializedDirectory';
-import ExportButton from '@/components/common/ExportButton';
+import ExportButton from "@/components/shared/ExportButton";
 import { resolveLabTestPrice } from "@backend/catalogue/lab-catalogue";
 // import { resolveMedPrice } from "backend/catalogue/meds-catalogue";
 

@@ -41,7 +41,7 @@ import {
 } from "@/types";
 import { apiFetch, socketManager } from "@/utils/api";
 import MaternitySuppliesCashierView from "@/views/cashier/MaternitySuppliesCashierView";
-import ExportButton from "@/components/common/ExportButton";
+import ExportButton from "@/components/shared/ExportButton";
 
 // Procurement queue row mapping (mirrors GET /hr/procurements payload shape).
 // Kept pure + exported so bun:test can verify the GET -> row contract.
