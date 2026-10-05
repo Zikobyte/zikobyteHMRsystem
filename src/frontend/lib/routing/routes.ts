@@ -42,7 +42,7 @@ const DoctorView = lazyView(() => import('@/views/DoctorView'));
 const LaboratoryView = lazyView(() => import('@/views/LaboratoryView'));
 const PharmacyView = lazyView(() => import('@/views/PharmacyView'));
 const HRDashboardView = lazyView(() => import('@/views/HRDashboardView'));
-const UserManagementView = lazyView(() => import('@/views/UserManagementView'));
+const UserManagementView = lazyView(() => import('@/views/it_admin/UserManagementView'));
 const CashierView = lazyView(() => import('@/views/CashierView'));
 const PatientDirectoryImportView = lazyView(
   () => import('@/views/PatientDirectoryImportView'),
