@@ -344,7 +344,9 @@ export default function OPDRegistrationView({
 		} catch {
 			// If user context is unreachable, stay silent (fetchReplacements itself is 403-tolerant).
 		}
-	};, []);
+	},
+		[]
+	);
 
 	// Dynamic Emergency Charge calculation effect
 	useEffect(() => {
