@@ -2029,7 +2029,7 @@ export default function OPDRegistrationView({
 			doc.text(p.status || "Active", colX.status, currentY + 5);
 
 			currentY += rowH;
-		};);
+		});
 
 		// Footer at the end of report
 		if (currentY + 25 > pageHeight) {
