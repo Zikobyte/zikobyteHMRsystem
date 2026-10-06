@@ -35,7 +35,7 @@ const lazyView = (importer: () => Promise<{ default: ComponentType<any> }>) =>
   React.lazy(importer);
 
 const DashboardView = lazyView(() => import('@/views/DashboardView'));
-const OPDRegistrationView = lazyView(() => import('@/views/OPDRegistrationView'));
+const OPDRegistrationView = lazyView(() => import('@/views/opd/OPDRegistrationView'));
 const NursingView = lazyView(() => import('@/views/NursingView'));
 const EyeClinicView = lazyView(() => import('@/views/EyeClinicView'));
 const DoctorView = lazyView(() => import('@/views/DoctorView'));

@@ -14,7 +14,7 @@ import { doctorSubTab, resolveViewPlan } from "@/lib/routing/view-plan";
 import { SessionProvider } from "@/lib/routing/session";
 
 const DashboardView = lazy(() => import("@/views/DashboardView"));
-const OPDRegistrationView = lazy(() => import("@/views/OPDRegistrationView"));
+const OPDRegistrationView = lazy(() => import("@/views/opd/OPDRegistrationView"));
 const EyeClinicView = lazy(() => import("@/views/EyeClinicView"));
 const DoctorView = lazy(() => import("@/views/DoctorView"));
 const UserManagementView = lazy(
