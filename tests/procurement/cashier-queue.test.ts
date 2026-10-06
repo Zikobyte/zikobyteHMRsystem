@@ -1,8 +1,9 @@
 import { describe, test, expect } from 'bun:test';
 import { readFile } from 'node:fs/promises';
 
-const cashierViewUrl = new URL('../../src/components/CashierView.tsx', import.meta.url);
-const dashboardLayoutUrl = new URL('../../src/components/DashboardLayout.tsx', import.meta.url);
+const cashierHookUrl = new URL('../../src/frontend/views/cashier/_hooks/useCashierData.ts', import.meta.url);
+const cashierShellUrl = new URL('../../src/frontend/views/cashier/CashierView.tsx', import.meta.url);
+const dashboardSidebarUrl = new URL('../../src/frontend/components/shared/dashboard/DashboardSidebar.tsx', import.meta.url);
 
 async function readSource(url: URL): Promise<string> {
   return await readFile(url, 'utf8');
@@ -30,21 +31,22 @@ function stubBrowserGlobals(): void {
 
 describe('cashier procurement queue (read-only)', () => {
   test('procurement-queue tab key is registered in CashierView', async () => {
-    const src = await readSource(cashierViewUrl);
-    expect(src.includes("| 'procurement-queue'")).toBe(true);
-    expect(src.includes("propActiveTab === 'cashier-procurement-queue'")).toBe(true);
-    expect(src.includes("propActiveTab === 'procurement-queue'")).toBe(true);
-    expect(src.includes("setActiveTab('procurement-queue')")).toBe(true);
-    expect(src.includes("activeTab === 'procurement-queue'")).toBe(true);
+    const hook = await readSource(cashierHookUrl);
+    const shell = await readSource(cashierShellUrl);
+    expect(hook.includes('| "procurement-queue"')).toBe(true);
+    expect(hook.includes('propActiveTab === "cashier-procurement-queue"')).toBe(true);
+    expect(hook.includes('propActiveTab === "procurement-queue"')).toBe(true);
+    expect(hook.includes('setActiveTab("procurement-queue")')).toBe(true);
+    expect(shell.includes('activeTab === "procurement-queue"') || hook.includes('activeTab === "procurement-queue"')).toBe(true);
   });
 
   test('cashier menu group gains exactly one procurement queue entry; other departments untouched', async () => {
-    const src = await readSource(dashboardLayoutUrl);
-    const occurrences = src.split("'cashier-procurement-queue'").length - 1;
+    const src = await readSource(dashboardSidebarUrl);
+    const occurrences = src.split('"cashier-procurement-queue"').length - 1;
     expect(occurrences).toBe(1);
-    expect(src.includes("label: 'Procurement Queue'")).toBe(true);
+    expect(src.includes('label: "Procurement Queue"')).toBe(true);
     // Pre-existing pharmacy procurement entry is preserved.
-    expect(src.includes("id: 'procurement'")).toBe(true);
+    expect(src.includes('id: "procurement"')).toBe(true);
     // The new cashier key must not leak into the pharmacy menu group block.
     const pharmacyBlockStart = src.indexOf('const pharmacyMenuGroups');
     const groupsEnd = src.indexOf('const effectiveMenuGroups');
@@ -52,12 +54,12 @@ describe('cashier procurement queue (read-only)', () => {
     expect(groupsEnd > pharmacyBlockStart).toBe(true);
     const pharmacyBlock = src.slice(pharmacyBlockStart, groupsEnd);
     expect(pharmacyBlock.includes('cashier-procurement-queue')).toBe(false);
-    expect(pharmacyBlock.includes("id: 'procurement'")).toBe(true);
+    expect(pharmacyBlock.includes('id: "procurement"')).toBe(true);
   });
 
   test('row mapping mirrors the GET /hr/procurements payload', async () => {
     stubBrowserGlobals();
-    const cashier = await import('@/views/CashierView');
+    const cashier = await import('@/views/cashier/_utils/cashier-mapper');
     const map = cashier.mapCashierProcurementQueueRow as (raw: unknown) => {
       id: string;
       item: string;
@@ -103,19 +105,18 @@ describe('cashier procurement queue (read-only)', () => {
   });
 
   test('new code path performs no mutations', async () => {
-    const src = await readSource(cashierViewUrl);
-    const fetchStart = src.indexOf('// Read-only procurement queue for cashiers');
+    const hook = await readSource(cashierHookUrl);
+    const tab = await readSource(
+      new URL('../../src/frontend/views/cashier/_tabs/ProcurementQueueTab.tsx', import.meta.url),
+    );
+    const fetchStart = hook.indexOf('// Read-only procurement queue for cashiers');
     expect(fetchStart > -1).toBe(true);
-    const fetchEnd = src.indexOf('}, [activeTab]);', fetchStart);
+    const fetchEnd = hook.indexOf('}, [activeTab]);', fetchStart);
     expect(fetchEnd > fetchStart).toBe(true);
-    const renderStart = src.indexOf('{/* 10. PROCUREMENT QUEUE');
-    expect(renderStart > -1).toBe(true);
-    const renderEnd = src.indexOf('DISCOUNT REQUEST MODAL', renderStart);
-    expect(renderEnd > renderStart).toBe(true);
-    const scope = `${src.slice(fetchStart, fetchEnd)}\n${src.slice(renderStart, renderEnd)}`;
+    const scope = `${hook.slice(fetchStart, fetchEnd)}\n${tab}`;
 
     // The queue loads through a single GET with no request body overrides.
-    expect(scope.includes("apiFetch('/hr/procurements')")).toBe(true);
+    expect(scope.includes('apiFetch("/hr/procurements")')).toBe(true);
     for (const method of [
       "method: 'POST'",
       'method: "POST"',
