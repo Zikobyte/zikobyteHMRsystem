@@ -1,7 +1,4 @@
-import AdmittedPatientsView from '@/views/nursing/AdmittedPatientsView';
-import DetainedPatientsView from '@/views/nursing/DetainedPatientsView';
-import InjectionRecordsView from '@/views/nursing/InjectionRecordsView';
-import NurseDispensingView from '@/views/nursing/NurseDispensingView';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import {
     Activity,
     BedDouble,
@@ -11,7 +8,11 @@ import {
     Search,
     Syringe
 } from 'lucide-react';
-import { useEffect, useState } from 'react';
+
+const AdmittedPatientsView = lazy(() => import('@/views/nursing/AdmittedPatientsView'));
+const DetainedPatientsView = lazy(() => import('@/views/nursing/DetainedPatientsView'));
+const InjectionRecordsView = lazy(() => import('@/views/nursing/InjectionRecordsView'));
+const NurseDispensingView = lazy(() => import('@/views/nursing/NurseDispensingView'));
 
 export type NursingSubTab = 'admitted-patients' | 'detained-patients' | 'nurse-dispensing' | 'injection-records';
 
@@ -155,6 +156,7 @@ export default function NursingView({
       </div>
 
       {/* Main Content Workspace */}
+      <Suspense fallback={<div className="bg-white border border-slate-200/80 rounded-3xl p-8 text-center text-sm font-medium text-slate-500">Loading nursing workspace…</div>}>
       {currentTab === 'admitted-patients' ? (
         <AdmittedPatientsView />
       ) : currentTab === 'detained-patients' ? (
@@ -235,6 +237,7 @@ export default function NursingView({
           </div>
         </div>
       )}
+      </Suspense>
     </div>
   );
 }

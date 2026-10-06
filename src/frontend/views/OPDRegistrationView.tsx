@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from "react";
-import { jsPDF } from "jspdf";
 import { apiFetch } from "../utils/api";
 import { Patient, Vitals, MaternityDetails, EmergencyDetails } from "../types";
 import {
@@ -1366,7 +1365,8 @@ export default function OPDRegistrationView({
 		setSuccess(`Downloaded Word document for ${p.name}`);
 	};
 
-	const handleDownloadSinglePdf = (p: any) => {
+	const handleDownloadSinglePdf = async (p: any) => {
+		const { jsPDF } = await import("jspdf");
 		const doc = new jsPDF({
 			orientation: "portrait",
 			unit: "mm",
@@ -1859,7 +1859,8 @@ export default function OPDRegistrationView({
 		setSuccess("Downloaded Google Doc registry report successfully.");
 	};
 
-	const handleDownloadPdf = () => {
+	const handleDownloadPdf = async () => {
+		const { jsPDF } = await import("jspdf");
 		const doc = new jsPDF({
 			orientation: "portrait",
 			unit: "mm",

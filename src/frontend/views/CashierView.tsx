@@ -29,7 +29,7 @@ import {
 	X,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import React, { useEffect, useRef, useState } from "react";
+import React, { lazy, Suspense, useEffect, useRef, useState } from "react";
 import {
 	DiscountRequest,
 	Invoice,
@@ -40,8 +40,11 @@ import {
 	User,
 } from "@/types";
 import { apiFetch, socketManager } from "@/utils/api";
-import MaternitySuppliesCashierView from "@/views/cashier/MaternitySuppliesCashierView";
 import ExportButton from "@/components/shared/ExportButton";
+
+const MaternitySuppliesCashierView = lazy(
+	() => import("@/views/cashier/MaternitySuppliesCashierView"),
+);
 
 // Procurement queue row mapping (mirrors GET /hr/procurements payload shape).
 // Kept pure + exported so bun:test can verify the GET -> row contract.
@@ -5388,14 +5391,22 @@ export default function CashierView({
 
 			{/* 9. MATERNITY WARD SUPPLIES & CASH HANDOVER TAB */}
 			{activeTab === "maternity-supplies" && (
-				<MaternitySuppliesCashierView
-					records={maternitySupplies}
-					isLoading={isLoadingMaternitySupplies}
-					onRefresh={fetchMaternitySupplies}
-					onBalanceSuccess={() => {
-						fetchInitialData();
-					}}
-				/>
+				<Suspense
+					fallback={
+						<div className="bg-white border border-slate-200/80 rounded-3xl p-8 text-center text-sm font-medium text-slate-500">
+							Loading maternity supplies…
+						</div>
+					}
+				>
+					<MaternitySuppliesCashierView
+						records={maternitySupplies}
+						isLoading={isLoadingMaternitySupplies}
+						onRefresh={fetchMaternitySupplies}
+						onBalanceSuccess={() => {
+							fetchInitialData();
+						}}
+					/>
+				</Suspense>
 			)}
 
 			{/* 10. PROCUREMENT QUEUE (READ-ONLY FOR CASHIERS — HR OWNS ALL WRITES) */}
