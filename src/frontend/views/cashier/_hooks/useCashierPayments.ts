@@ -975,7 +975,7 @@ export function useCashierPayments({
 	};
 
 	// Helper to map patientId to name & hospital number
-	const getPatientDetails = (patId: string) => {
+	const getPatientDetails = (patId: string | undefined) => {
 		const pat = patients.find((p) => p.id === patId);
 		if (pat) return { name: pat.name, hNum: pat.hospitalNumber };
 		const payRec = payments.find(

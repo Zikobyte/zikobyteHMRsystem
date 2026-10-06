@@ -24,7 +24,7 @@ function stubBrowserGlobals(): void {
 describe('frontend catalogue parity with canonical lab catalogue', () => {
   test('every DoctorView test code exists in the canonical table at an equal displayed price', async () => {
     stubBrowserGlobals();
-    const doctor = await import('@/views/DoctorView');
+    const doctor = await import('@/views/doctor/_utils/doctor-catalog');
     const groups = [
       doctor.CHEMISTRY_TESTS,
       doctor.SEROLOGY_TESTS,
