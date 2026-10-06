@@ -863,17 +863,25 @@ hrRoutes.get('/procurements', async (req: AuthenticatedRequest, res: Response) =
 
 hrRoutes.post('/procurements', authorizeRoles(['Administrator', 'IT Administrator', 'Management', 'HR Manager', 'Account Officer', 'Accountant', 'Pharmacist']) as any, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const { item_name, items, quantity, unit_price, amount, department, supplier_name, requested_by, status, date, category } = req.body;
+    const { item_name, items, quantity, unit_price, department, supplier_name, requested_by, date, category } = req.body;
     if (!item_name && !items) {
       return res.status(400).json({ success: false, error: 'Item description is required' });
     }
 
     const id = generateUUID();
     const qty = parseInt(quantity, 10) || 1;
+    if (!Number.isFinite(qty) || qty <= 0) {
+      return res.status(400).json({ success: false, error: 'quantity must be a number > 0' });
+    }
     const unitPrice = parseFloat(unit_price) || 0;
-    const totalAmount = parseFloat(amount) || (qty * unitPrice) || 0;
+    if (!Number.isFinite(unitPrice) || unitPrice < 0) {
+      return res.status(400).json({ success: false, error: 'unit_price must be a number >= 0' });
+    }
+    // Server-computed amount — client amount/status NEVER trusted.
+    const totalAmount = qty * unitPrice;
     const reqDate = date || new Date().toISOString().split('T')[0];
-    const statusVal = status || 'Ordered';
+    // New requests always start Pending; approval happens via PATCH by HR/Management.
+    const statusVal = 'Pending';
 
     const pool = getPostgresPool();
     if (pool) {
@@ -916,10 +924,32 @@ hrRoutes.post('/procurements', authorizeRoles(['Administrator', 'IT Administrato
 hrRoutes.patch('/procurements/:id', authorizeRoles(['Administrator', 'IT Administrator', 'Management', 'HR Manager', 'Account Officer']) as any, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { id } = req.params;
-    const { status, amount, items, supplier_name } = req.body;
+    const { status, items, supplier_name, quantity, unit_price } = req.body;
+
+    const ALLOWED_STATUSES = ['Pending', 'Approved', 'Ordered', 'Delivered', 'Cancelled', 'Rejected'];
+    if (status !== undefined && !ALLOWED_STATUSES.includes(status)) {
+      return res.status(400).json({ success: false, error: `status must be one of [${ALLOWED_STATUSES.join(', ')}]` });
+    }
 
     const pool = getPostgresPool();
     if (pool) {
+      // Server recomputes amount from quantity * unit_price when both are supplied;
+      // raw client amount is never trusted.
+      let serverAmount: number | undefined;
+      if (quantity !== undefined || unit_price !== undefined) {
+        const current = await pool.query('SELECT quantity, unit_price FROM zmc_procurements WHERE id = $1', [id]);
+        if (current.rows.length === 0) return res.status(404).json({ success: false, error: 'Procurement not found' });
+        const baseQty = quantity !== undefined ? parseInt(quantity, 10) : parseInt(current.rows[0].quantity, 10);
+        const baseUnit = unit_price !== undefined ? parseFloat(unit_price) : parseFloat(current.rows[0].unit_price);
+        if (!Number.isFinite(baseQty) || baseQty <= 0) {
+          return res.status(400).json({ success: false, error: 'quantity must be a number > 0' });
+        }
+        if (!Number.isFinite(baseUnit) || baseUnit < 0) {
+          return res.status(400).json({ success: false, error: 'unit_price must be a number >= 0' });
+        }
+        serverAmount = baseQty * baseUnit;
+        await pool.query('UPDATE zmc_procurements SET quantity = $1, unit_price = $2, amount = $3 WHERE id = $4', [baseQty, baseUnit, serverAmount, id]);
+      }
       const updateRes = await pool.query(`
         UPDATE zmc_procurements
         SET 
@@ -929,7 +959,7 @@ hrRoutes.patch('/procurements/:id', authorizeRoles(['Administrator', 'IT Adminis
           supplier_name = COALESCE($4, supplier_name)
         WHERE id = $5
         RETURNING *
-      `, [status, amount ? parseFloat(amount) : undefined, items, supplier_name, id]);
+      `, [status, serverAmount, items, supplier_name, id]);
 
       if (updateRes.rows.length === 0) return res.status(404).json({ success: false, error: 'Procurement not found' });
       await refreshCache();
@@ -939,7 +969,22 @@ hrRoutes.patch('/procurements/:id', authorizeRoles(['Administrator', 'IT Adminis
     const db = getDB();
     const idx = (db.procurements || []).findIndex(p => p.id === id);
     if (idx === -1) return res.status(404).json({ success: false, error: 'Procurement not found' });
-    db.procurements[idx] = { ...db.procurements[idx], ...req.body };
+    // Allowlist-only update for in-memory fallback — never spread raw req.body.
+    const allowedPatch: any = {};
+    if (status !== undefined) allowedPatch.status = status;
+    if (items !== undefined) allowedPatch.items = items;
+    if (supplier_name !== undefined) allowedPatch.supplier_name = supplier_name;
+    if (quantity !== undefined || unit_price !== undefined) {
+      const cur = db.procurements[idx];
+      const baseQty = quantity !== undefined ? parseInt(quantity, 10) : parseInt(cur.quantity, 10);
+      const baseUnit = unit_price !== undefined ? parseFloat(unit_price) : parseFloat(cur.unit_price);
+      if (Number.isFinite(baseQty) && baseQty > 0 && Number.isFinite(baseUnit) && baseUnit >= 0) {
+        allowedPatch.quantity = baseQty;
+        allowedPatch.unit_price = baseUnit;
+        allowedPatch.amount = baseQty * baseUnit;
+      }
+    }
+    db.procurements[idx] = { ...db.procurements[idx], ...allowedPatch };
     return res.json({ success: true, data: db.procurements[idx] });
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message });

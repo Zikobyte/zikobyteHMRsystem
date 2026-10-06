@@ -1,35 +1,12 @@
-import { Router, Request, Response, NextFunction } from 'express';
-import jwt from 'jsonwebtoken';
-import { AuthenticatedRequest } from '../../middleware/auth.middleware';
+import { Router, Request, Response } from 'express';
+import { AuthenticatedRequest, authenticateJWT, authorizeRoles } from '../../middleware/auth.middleware';
 import { getPostgresPool, getDB, generateUUID } from '../../database/db.repo';
-import { JWT_SECRET } from '../../config/env';
 
 export const nursingRoutes = Router();
 
-// Middleware: authenticate token if available, but allow graceful continuation for nursing operations
-nursingRoutes.use((req: AuthenticatedRequest, res: Response, next: NextFunction) => {
-  const authHeader = req.headers.authorization;
-  if (authHeader && authHeader.startsWith('Bearer ')) {
-    const token = authHeader.split(' ')[1];
-    try {
-      const decoded = jwt.verify(token, JWT_SECRET) as any;
-      req.user = decoded;
-      return next();
-    } catch (error) {
-      // Invalid or expired token - fallback to default nurse session
-    }
-  }
-
-  // Graceful fallback for nursing intranet session if token missing or invalid
-  req.user = {
-    id: 'user-head-nurse-7',
-    username: 'nurse1',
-    role: 'Nurse',
-    name: 'Head Nurse',
-    department: 'Nursing'
-  };
-  next();
-});
+// All nursing routes require a valid JWT. Unauthenticated requests get 401
+// (previously a guest Nurse session was minted here — removed for PHI protection).
+nursingRoutes.use(authenticateJWT as any);
 
 // In-memory initial seed for admitted patients if not already initialized
 function ensureNursingSeed() {
@@ -63,6 +40,7 @@ function ensureNursingSeed() {
       status: 'Pending Handover',
       nurse_name: 'Nurse Faith (Maternity)',
       created_at: '2026-09-08T04:03:00.000Z',
+      handed_over_at: '2026-09-08T04:03:00.000Z',
       formatted_date: '08/09/2026, 04:03'
     });
   }
@@ -1197,7 +1175,7 @@ nursingRoutes.get('/admissions/:id/billing', async (req: AuthenticatedRequest, r
 // -------------------------------------------------------------
 // 6B. MATERNITY ADMISSION CHECKLIST & WARD SUPPLY BILLING
 // -------------------------------------------------------------
-nursingRoutes.get('/admissions/:id/maternity-checklist', async (req: AuthenticatedRequest, res: Response) => {
+nursingRoutes.get('/admissions/:id/maternity-checklist', authorizeRoles(['Nurse', 'Doctor']) as any, async (req: AuthenticatedRequest, res: Response) => {
   try {
     ensureNursingSeed();
     const { id } = req.params;
@@ -1226,11 +1204,12 @@ nursingRoutes.get('/admissions/:id/maternity-checklist', async (req: Authenticat
   }
 });
 
-nursingRoutes.post('/admissions/:id/maternity-checklist', async (req: AuthenticatedRequest, res: Response) => {
+nursingRoutes.post('/admissions/:id/maternity-checklist', authorizeRoles(['Nurse']) as any, async (req: AuthenticatedRequest, res: Response) => {
   try {
     ensureNursingSeed();
     const { id } = req.params;
-    const { items, billedItems, totalAmount } = req.body;
+    const { items, billedItems } = req.body;
+    // NOTE: client totalAmount is NEVER trusted — server recomputes from billedItems.
     const db = getDB() as any;
 
     const patient = (db.admissions || []).find((a: any) => a.id === id || a.hospital_number === id || a.patient_id === id);
@@ -1244,8 +1223,20 @@ nursingRoutes.post('/admissions/:id/maternity-checklist', async (req: Authentica
     // Save current items
     db.maternityChecklists[patient.id] = items;
 
+    // Server-authoritative total: validate + sum billedItems, ignore any client total.
+    const cleanBilledItems: { label: string; amount: number }[] = [];
+    if (Array.isArray(billedItems)) {
+      for (const bi of billedItems) {
+        const label = typeof bi?.label === 'string' ? bi.label.trim().slice(0, 255) : '';
+        const amt = Number(bi?.amount);
+        if (!label || !Number.isFinite(amt) || amt < 0) continue;
+        cleanBilledItems.push({ label, amount: Math.round(amt) });
+      }
+    }
+    const serverTotal = cleanBilledItems.reduce((sum, i) => sum + i.amount, 0);
+
     let handoverRecord = null;
-    if (totalAmount && totalAmount > 0) {
+    if (serverTotal > 0) {
       const nurseName = req.user?.username || req.user?.name || 'Nurse (Maternity Ward)';
 
       // 1. Add Charge to Nurse Billing
@@ -1253,8 +1244,8 @@ nursingRoutes.post('/admissions/:id/maternity-checklist', async (req: Authentica
         id: `bill-mat-${Date.now()}`,
         admission_id: patient.id,
         patient_id: patient.patient_id || patient.id,
-        item: `Maternity Ward Supplies (${billedItems?.length || 0} items provided)`,
-        amount: totalAmount,
+        item: `Maternity Ward Supplies (${cleanBilledItems?.length || 0} items provided)`,
+        amount: serverTotal,
         type: 'Charge',
         recorded_at: new Date().toLocaleString('en-GB'),
         date_sort: new Date().toISOString()
@@ -1262,7 +1253,7 @@ nursingRoutes.post('/admissions/:id/maternity-checklist', async (req: Authentica
       db.nurseBilling.push(billCharge);
 
       // Update patient's charged totals
-      patient.total_charged = (patient.total_charged || 0) + totalAmount;
+      patient.total_charged = (patient.total_charged || 0) + serverTotal;
       patient.outstanding_balance = Math.max(0, (patient.total_charged || 0) - (patient.payments_made || 0));
 
       // 2. Create or Update Handover record for Cashier Portal
@@ -1274,11 +1265,12 @@ nursingRoutes.post('/admissions/:id/maternity-checklist', async (req: Authentica
         hospital_number: patient.hospital_number || patient.id,
         ward: patient.ward || 'Maternity Ward',
         bed: patient.bed || 'M-3',
-        items: billedItems || [],
-        total_amount: totalAmount,
+        items: cleanBilledItems || [],
+        total_amount: serverTotal,
         status: 'Pending Handover',
         nurse_name: nurseName,
         created_at: new Date().toISOString(),
+        handed_over_at: new Date().toISOString(),
         formatted_date: new Date().toLocaleString('en-GB')
       };
 
@@ -1300,11 +1292,14 @@ nursingRoutes.post('/admissions/:id/maternity-checklist', async (req: Authentica
 // -------------------------------------------------------------
 // 6C. MATERNITY WARD SUPPLIES HANDOVER (CASHIER & NURSING PORTAL)
 // -------------------------------------------------------------
-nursingRoutes.get('/maternity-supplies', async (req: AuthenticatedRequest, res: Response) => {
+nursingRoutes.get('/maternity-supplies', authorizeRoles(['Nurse', 'Cashier', 'Account Officer', 'Accountant']) as any, async (req: AuthenticatedRequest, res: Response) => {
   try {
     ensureNursingSeed();
     const db = getDB() as any;
-    const handovers = db.maternitySupplyHandovers || [];
+    const handovers = (db.maternitySupplyHandovers || []).map((h: any) => ({
+      ...h,
+      handed_over_at: (h as any).handed_over_at ?? (h as any).formatted_date ?? (h as any).created_at ?? '—'
+    }));
     res.json({
       success: true,
       data: handovers
@@ -1315,7 +1310,8 @@ nursingRoutes.get('/maternity-supplies', async (req: AuthenticatedRequest, res: 
   }
 });
 
-nursingRoutes.post('/maternity-supplies/:id/balance', async (req: AuthenticatedRequest, res: Response) => {
+// Cashier-group equivalents admit Account Officer/Accountant — intentional, matches payments policy.
+nursingRoutes.post('/maternity-supplies/:id/balance', authorizeRoles(['Cashier']) as any, async (req: AuthenticatedRequest, res: Response) => {
   try {
     ensureNursingSeed();
     const { id } = req.params;

@@ -1,4 +1,6 @@
 import { query, generateUUID, getPostgresStatus, getDB } from '../../database/db.repo';
+import { resolveLabTestPrice } from '../../catalogue/lab-catalogue';
+import { queuePricingReview } from '../../catalogue/pricing-review';
 
 async function populatePatientsWithRelationalData(rows: any[]): Promise<any[]> {
   if (rows.length === 0) return [];
@@ -237,6 +239,22 @@ export class PatientsRepository {
 
     // If there are emergency details, insert them into zmc_emergency_records
     if (patient.emergencyDetails) {
+      // Server recomputes emergency total here as well — client totalBillAmount ignored.
+      const _ed = patient.emergencyDetails || {};
+      let _serverEmergencyTotal: number | null = null;
+      if (patient.cardType === 'Emergency') {
+        _serverEmergencyTotal = 0;
+        if (_ed.isSickEmergency) _serverEmergencyTotal += 25000;
+        if (_ed.isUnbookedLabour) _serverEmergencyTotal += 50000;
+        if (_ed.isAccident) _serverEmergencyTotal += 50000;
+        if (_ed.isDoctorOnCall || _ed.isAfterHours) _serverEmergencyTotal += 5000;
+        if (!(_serverEmergencyTotal > 0)) _serverEmergencyTotal = 5000;
+      }
+      let _serverCash: number | null = null;
+      if (patient.cardType === 'Emergency') {
+        const _c = Number(_ed.cashCollected || 0);
+        _serverCash = Number.isFinite(_c) && _c >= 0 ? Math.min(_c, _serverEmergencyTotal as number) : 0;
+      }
       await query(`
         INSERT INTO zmc_emergency_records (
           id, patient_id, is_sick_emergency, is_unbooked_labour, is_accident, is_doctor_on_call, is_after_hours, custom_details, total_bill_amount, cash_collected, doctor_on_call_name
@@ -250,8 +268,8 @@ export class PatientsRepository {
         !!patient.emergencyDetails.isDoctorOnCall,
         !!patient.emergencyDetails.isAfterHours,
         patient.emergencyDetails.customDetails || null,
-        patient.emergencyDetails.totalBillAmount || null,
-        patient.emergencyDetails.cashCollected || null,
+        _serverEmergencyTotal ?? patient.emergencyDetails.totalBillAmount ?? null,
+        _serverCash ?? patient.emergencyDetails.cashCollected ?? null,
         patient.emergencyDetails.doctorOnCallName || null
       ]);
     }
@@ -407,9 +425,20 @@ export class PatientsRepository {
       const docName = patient.emergencyDetails?.doctorOnCallName || 'On-Call Emergency Team';
       const priorityReason = patient.emergencyDetails?.customDetails || `Emergency medical intake. Doctor on call: ${docName}.`;
       const clinicalStatus = 'In Emergency Care';
-      
-      const totalBill = parseFloat(patient.emergencyDetails?.totalBillAmount || patient.cardFee || 5000);
-      const cashCollected = parseFloat(patient.emergencyDetails?.cashCollected || 0);
+
+      // Server-authoritative emergency total — client totalBillAmount NEVER trusted.
+      // Mirrors EMERGENCY_FEE_SCHEDULE + zmc_price_catalogue emergency rows.
+      const ed = patient.emergencyDetails || {};
+      let totalBill = 0;
+      if (ed.isSickEmergency) totalBill += 25000;
+      if (ed.isUnbookedLabour) totalBill += 50000;
+      if (ed.isAccident) totalBill += 50000;
+      if (ed.isDoctorOnCall || ed.isAfterHours) totalBill += 5000;
+      if (!(totalBill > 0)) totalBill = 5000;
+      let cashCollected = Number(ed.cashCollected || 0);
+      if (!Number.isFinite(cashCollected) || cashCollected < 0) cashCollected = 0;
+      // Cash tendered can never exceed server total — clamp overpay.
+      if (cashCollected > totalBill) cashCollected = totalBill;
       const paymentStatus = cashCollected > 0 ? 'Unconfirmed' : 'Unpaid';
 
       // Insert emergency encounter
@@ -428,12 +457,16 @@ export class PatientsRepository {
       `, [invoiceId, id, encounterId, totalBill, cashCollected >= totalBill ? 'Unconfirmed' : 'Unpaid', invoiceDescription]);
 
       // If initial cash was collected at OPD registration desk, record payment awaiting cashier audit
+      // Schema note (Phase 2 fix): zmc_payments has NO recorded_by/created_at/notes
+      // columns (real DDL in db.repo.ts: collected_by, date_paid + description, the
+      // latter added for idempotency/audit notes). Intent preserved 1:1 — collector
+      // in collected_by, timestamp in date_paid, handover note in description.
       if (cashCollected > 0) {
         const paymentId = generateUUID();
         try {
           await query(`
             INSERT INTO zmc_payments (
-              id, patient_id, encounter_id, invoice_id, amount, payment_method, status, recorded_by, created_at, notes
+              id, patient_id, encounter_id, invoice_id, amount, payment_method, status, collected_by, date_paid, description
             ) VALUES ($1, $2, $3, $4, $5, 'Cash', 'Unconfirmed', $6, NOW(), $7)
           `, [
             paymentId,
@@ -1233,55 +1266,55 @@ export class PatientsRepository {
     if (routeTo === 'lab' && orderedTests && orderedTests.length > 0) {
       let totalLabAmount = 0;
       const testNames: string[] = [];
-      const priceMap: { [key: string]: number } = {
-        'Liver Function Test (LFT)': 15000,
-        'Electrolyte, Urea, Creatinine (E/U/C)': 15000,
-        'Lipid Profile': 15000,
-        'Prostate Specific Antigen (PSA)': 18000,
-        'Cholesterol': 7000,
-        'Random Blood Sugar (RBS)': 1500,
-        'Fasting Blood Sugar (FBS)': 1500,
-        'Full Blood Count (FBC)': 7000,
-        'Hormonal Assay': 60000,
-        'HbA1c (Glycated Sugar)': 7000,
-        'Urine Analysis (UA)': 2500,
-        'Faecal Occult Blood Test (FOB)': 3000,
-        'Pregnancy Test – PT (HCG)': 2500,
-        'Widal Test': 7000,
-        'Hepatitis B (HBsAg)': 3500,
-        'Hepatitis C (HCV)': 3500,
-        'VDRL (Syphilis)': 3500,
-        'Retroviral Screening (RVS)': 5000,
-        'Blood Percentage (HB)': 1500,
-        'Blood Group (BG)': 4000,
-        'Genotype (GT)': 8000,
-        'EAR SWAB M/C/S': 7000,
-        'HVS M/C/S': 7000,
-        'Urine M/C/S': 7000,
-        'Pus Swab M/C/S': 10000,
-        'Semen Culture M/C/S': 15000,
-        'Urethral Swab M/C/S': 7000,
-        'Stool Culture M/C/S': 15000,
-        'Sputum M/C/S': 10000,
-        'H. pylori (HP)': 5000,
-        'Stool Analysis': 5000,
-        'Microfilaria (MF)': 5000,
-        'Malaria Parasite (MP)': 3000
-      };
 
+      const resolvedTests: { code: string; name: string; price: number; category: string | null }[] = [];
+      const unknownTests: string[] = [];
       for (const test of orderedTests) {
-        const testName = test.name || (typeof test === 'string' ? test : 'General Pathology Test');
-        let testPrice = Number(test.price);
-        if (isNaN(testPrice) || testPrice <= 0) {
-          testPrice = priceMap[testName] || 5000;
+        const rawName =
+          test.name || (typeof test === 'string' ? test : '') || 'Unnamed test';
+        const resolved = resolveLabTestPrice({ code: test.code, name: test.name ?? test });
+        if (!resolved) {
+          unknownTests.push(String(test.code || rawName));
+          continue;
         }
+        resolvedTests.push({
+          code: resolved.code,
+          name: resolved.name,
+          price: resolved.price,
+          category: test.category || resolved.category || null,
+        });
+      }
+
+      if (unknownTests.length > 0) {
+        for (const unknownName of unknownTests) {
+          try {
+            await queuePricingReview({
+              kind: 'lab',
+              code: null,
+              name: unknownName,
+              patientId,
+              encounterId,
+              requestedBy: completedBy,
+            });
+          } catch {
+            // Review queue write failure must not mask the pricing rejection.
+          }
+        }
+        throw new Error(
+          `PRICING_REVIEW_REQUIRED: ${unknownTests.join(', ')} has no catalogue price and was parked for pricing review. No order was created.`,
+        );
+      }
+
+      for (const ordered of resolvedTests) {
+        const testName = ordered.name;
+        const testPrice = ordered.price;
         totalLabAmount += testPrice;
         testNames.push(`${testName} (₦${testPrice.toLocaleString()})`);
 
         await query(`
-          INSERT INTO zmc_laboratory_orders (id, patient_id, encounter_id, doctor_id, test_name, status, date_ordered, price, category)
-          VALUES ($1, $2, $3, (SELECT id FROM zmc_users WHERE username = $4 LIMIT 1), $5, 'Pending', NOW(), $6, $7)
-        `, [generateUUID(), patientId, encounterId, completedBy, testName, testPrice, test.category || null]);
+          INSERT INTO zmc_laboratory_orders (id, patient_id, encounter_id, doctor_id, test_name, test_code, status, date_ordered, price, category)
+          VALUES ($1, $2, $3, (SELECT id FROM zmc_users WHERE username = $4 LIMIT 1), $5, $6, 'Pending', NOW(), $7, $8)
+        `, [generateUUID(), patientId, encounterId, completedBy, testName, ordered.code, testPrice, ordered.category]);
       }
 
       // Create unpaid system invoice with total laboratory amount
@@ -1398,6 +1431,24 @@ export class PatientsRepository {
       SELECT * FROM zmc_laboratory_orders
       WHERE encounter_id = $1 AND status = 'Pending'
     `, [encounterId]);
+    // Heal on read (in-memory only — no DB write-back): re-resolve catalogue
+    // price for rows with NULL/0/NaN price. resolveLabTestPrice is already
+    // imported top-level (lab-catalogue has no imports, so no cycle risk).
+    for (const row of res.rows) {
+      const price = Number(row.price);
+      if (!Number.isFinite(price) || price <= 0) {
+        const resolved = resolveLabTestPrice({ code: row.test_code, name: row.test_name });
+        if (resolved) {
+          row.price = resolved.price;
+          row.test_code = resolved.code;
+          row.needsPricing = false;
+        } else {
+          row.needsPricing = true;
+        }
+      } else {
+        row.needsPricing = false;
+      }
+    }
     return res.rows;
   }
 

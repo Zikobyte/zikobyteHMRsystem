@@ -1,0 +1,911 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>ZMC EHR – Complete Implementation Specification</title>
+<style>
+      body{font-family:system-ui,-apple-system,sans-serif;max-width:1100px;margin:40px auto;padding:0 24px;color:#111827;background:#fff;line-height:1.7}
+      h1{font-size:2rem;font-weight:800;color:#111827;margin-bottom:6px;border-bottom:3px solid #1D4ED8;padding-bottom:12px}
+      h2{font-size:1.4rem;font-weight:700;color:#1D4ED8;margin-top:40px;margin-bottom:12px;padding-bottom:6px;border-bottom:2px solid #DBEAFE}
+      h3{font-size:1.1rem;font-weight:600;color:#374151;margin-top:24px;margin-bottom:8px}
+      h4{font-size:1rem;font-weight:600;color:#4B5563;margin-top:16px;margin-bottom:6px}
+      table{width:100%;border-collapse:collapse;margin:16px 0;font-size:.85rem}
+      th{background:#1D4ED8;color:#fff;padding:8px 12px;text-align:left;font-weight:600}
+      td{padding:7px 12px;border-bottom:1px solid #E5E7EB;vertical-align:top}
+      tr:nth-child(even) td{background:#F9FAFB}
+      code,pre{background:#F3F4F6;border-radius:6px;font-family:monospace;font-size:.82rem;padding:2px 6px}
+      pre{padding:14px;overflow-x:auto;line-height:1.5;white-space:pre-wrap;word-break:break-word}
+      ul,ol{padding-left:20px;margin:8px 0}
+      li{margin:4px 0}
+      .toc{background:#EFF6FF;border:2px solid #93C5FD;border-radius:10px;padding:20px 28px;margin:24px 0}
+      .toc h3{color:#1D4ED8;margin-top:0}
+      .toc a{color:#1D4ED8;text-decoration:none;display:block;margin:4px 0;font-size:.9rem}
+      .toc a:hover{text-decoration:underline}
+      .cover{background:linear-gradient(135deg,#1e3a8a,#1d4ed8);color:#fff;padding:48px;border-radius:16px;margin-bottom:32px}
+      .cover h1{border:none;color:#fff;font-size:2.2rem}
+      .cover p{color:#bfdbfe;margin:4px 0}
+      footer{text-align:center;color:#9CA3AF;font-size:.8rem;margin-top:48px;padding-top:16px;border-top:1px solid #E5E7EB}
+    </style>
+</head>
+<body>
+<div class="cover">
+  <h1>ZMC EHR – Complete Implementation Specification</h1>
+  <p>Zikora Medical Centre Hospital Management System</p>
+  <p>Version 1.0 · June 2026 · Confidential – Zikobyte</p>
+</div>
+<div class="toc">
+  <h3>Table of Contents</h3>
+  <a href="#s1">1. Project Overview</a><a href="#s2">2. Global Design System</a><a href="#s3">3. Layout</a><a href="#s4">4. Components</a><a href="#s5">5. Every Screen</a><a href="#s6">6. Forms</a><a href="#s7">7. Tables</a><a href="#s8">8. Navigation</a><a href="#s9">9. User Interactions</a><a href="#s10">10. Assets</a><a href="#s11">11. Accessibility</a><a href="#s12">12. Responsive Behavior</a><a href="#s13">13. Technical Architecture</a><a href="#s14">14. Developer Notes</a>
+</div>
+<h2 id="s1">1. Project Overview</h2>
+<h3>Purpose</h3>
+ZMC EHR (Zikora Medical Centre Electronic Health Record) is an intranet-hosted, browser-based hospital management system built for Zikora Medical Centre, Ogborhill, Aba, Abia State, Nigeria. It replaces paper-based patient records and cash tracking with a real-time, multi-department digital workflow that requires <strong>no internet connection</strong> — all data, communication and notifications flow over the hospital's local area network (LAN).
+<h3>Primary User Personas</h3>
+<table><thead><tr><th>Role</th><th>Username Key</th><th>Responsibilities</th></tr></thead><tbody><tr><td>OPD Clerk</td><td>opd</td><td>Patient registration, card issuance, emergency cash collection, maternity registration, admissions overview</td></tr>
+<tr><td>Cashier</td><td>cashier</td><td>Payment processing, discharge billing, discount requests, PV entries, outstanding balances</td></tr>
+<tr><td>Doctor</td><td>doctor</td><td>Consultations, lab orders, prescriptions, admissions, discharge approvals</td></tr>
+<tr><td>Laboratory Technician</td><td>lab</td><td>Lab test processing, walk-in registration, results entry</td></tr>
+<tr><td>Pharmacist</td><td>pharmacy</td><td>Drug dispensing, admitted patient orders, stock management, procurement requests</td></tr>
+<tr><td>Nurse</td><td>nurse</td><td>Ward management, vitals recording, medication administration, observations, detention</td></tr>
+<tr><td>Eye Clinic</td><td>eyeclinic</td><td>Eye patient registration, consultations, lens/frame sales</td></tr>
+<tr><td>Account Officer</td><td>account</td><td>Financial reporting, revenue tracking, procurement review, Excel exports</td></tr>
+<tr><td>HR Manager</td><td>hr</td><td>Employee records, absences, recruitment, procurement approval, <strong>discount approvals</strong></td></tr></tbody></table>
+<h3>Main Workflows</h3>
+<li><strong>Regular OPD</strong>: Register → Vitals (Nursing) → Cashier (₦5,000 fee) → Doctor → [Lab payment → Lab → Doctor] → Cashier (Pharmacy) → Pharmacy → Complete</li>
+<li><strong>Emergency</strong>: OPD collects cash (records Total Bill + Collected + Balance) → Doctor immediately → Cashier confirms receipt → Regular flow</li>
+<li><strong>Maternity/Antenatal</strong>: Registration → Cashier → Doctor → [In labour → Maternity Ward → Delivery → Cashier] or [Routine visit → continue]</li>
+<li><strong>Walk-in Lab</strong>: Lab registers → Cashier verifies → Lab runs tests → Results collected</li>
+<li><strong>Admission</strong>: Doctor marks pending → OPD 4-group view → Nursing assigns ward/bed → Daily care loop → Doctor discharges → Bill auto-sent to Cashier → Settled → Discharged</li>
+<li><strong>Discount Approval</strong>: Cashier selects patient bill → enters amount + reason → HR reviews → Approve/Reject → Account Officer logs</li>
+<li><strong>Procurement</strong>: Pharmacist requests → Account Officer reviews → HR approves → Supplier delivers</li>
+<li><strong>Eye Clinic</strong>: Registration → Consultation → Service selection → Cashier → Complete</li>
+<h3>Navigation Structure</h3>
+<ul><li><strong>Single-page app</strong> — all routing via React state (activeTab / role-based conditional rendering)</li>
+<li>Top header bar with role display, report buttons (Storage Report, Intranet Guide), Process Flow, and Logout</li>
+<li>Role determines which interface component renders</li>
+<li>No URL-based routing (localStorage-persisted sessions)</li>
+</ul>
+<h3>Screen Hierarchy</h3>
+``<code>
+App
+├── LoginScreen (no user)
+└── MainApp (logged in)
+    ├── Header (all roles)
+    │   ├── Storage Report overlay
+    │   ├── Intranet Setup Guide overlay
+    │   └── Process Flow overlay
+    ├── OPDInterface       (role: opd)
+    ├── CashierInterface   (role: cashier)
+    ├── DoctorInterface    (role: doctor)
+    ├── LabInterface       (role: lab)
+    ├── PharmacyInterface  (role: pharmacy)
+    ├── NursingInterface   (role: nurse)
+    ├── EyeClinicInterface (role: eyeclinic)
+    ├── AccountOfficerInterface (role: account)
+    └── HRInterface        (role: hr)
+</code>``
+<hr style="margin:32px 0;border-color:#E5E7EB">
+<h2 id="s2">2. Global Design System</h2>
+<h3>Technology Stack</h3>
+<ul><li><strong>Framework</strong>: React 18.3.1 + TypeScript</li>
+<li><strong>Styling</strong>: Tailwind CSS 4.1.12 (utility-first, no custom CSS framework)</li>
+<li><strong>Build</strong>: Vite 6.3.5</li>
+<li><strong>Icons</strong>: lucide-react 0.487.0</li>
+<li><strong>Charts</strong>: recharts 2.15.2</li>
+<li><strong>Spreadsheet</strong>: xlsx 0.18.5</li>
+<li><strong>Animation</strong>: motion 12.23.24</li>
+<h3>Color Palette (Tailwind semantic classes mapped to hex)</h3>
+<table><thead><tr><th>Token</th><th>Class</th><th>Hex</th><th>Usage</th></tr></thead><tbody><tr><td>Primary Blue</td><td>bg-blue-600</td><td>#2563EB</td><td>Default actions, department headers</td></tr>
+<tr><td>Blue Dark</td><td>bg-blue-700</td><td>#1D4ED8</td><td>Hover on primary</td></tr>
+<tr><td>Blue Light</td><td>bg-blue-50</td><td>#EFF6FF</td><td>Background tints</td></tr>
+<tr><td>Teal</td><td>bg-teal-600</td><td>#0D9488</td><td>Admission/Nursing accent</td></tr>
+<tr><td>Green</td><td>bg-green-600</td><td>#16A34A</td><td>Confirmed/Success actions</td></tr>
+<tr><td>Green Dark</td><td>bg-green-700</td><td>#15803D</td><td>Doctor discharge</td></tr>
+<tr><td>Orange</td><td>bg-orange-600</td><td>#EA580C</td><td>Walk-in Lab, pending admission</td></tr>
+<tr><td>Amber</td><td>bg-amber-600</td><td>#D97706</td><td>Outstanding balances, warnings</td></tr>
+<tr><td>Red</td><td>bg-red-600</td><td>#DC2626</td><td>Emergency, destructive</td></tr>
+<tr><td>Red Dark</td><td>bg-red-700</td><td>#B91C1C</td><td>Emergency headers</td></tr>
+<tr><td>Pink</td><td>bg-pink-600</td><td>#DB2777</td><td>Maternity</td></tr>
+<tr><td>Purple</td><td>bg-purple-600</td><td>#9333EA</td><td>Process flow toggle</td></tr>
+<tr><td>Indigo</td><td>bg-indigo-600</td><td>#4F46E5</td><td>Discharge billing</td></tr>
+<tr><td>Slate</td><td>bg-slate-700</td><td>#334155</td><td>Intranet guide button</td></tr>
+<tr><td>Gray Background</td><td>bg-gray-50</td><td>#F9FAFB</td><td>Page background</td></tr>
+<tr><td>White Card</td><td>bg-white</td><td>#FFFFFF</td><td>Card surfaces</td></tr>
+<tr><td>Text Primary</td><td>text-gray-900</td><td>#111827</td><td>Main headings</td></tr>
+<tr><td>Text Secondary</td><td>text-gray-600</td><td>#4B5563</td><td>Sub-labels</td></tr>
+<tr><td>Text Muted</td><td>text-gray-400</td><td>#9CA3AF</td><td>Placeholder, timestamps</td></tr>
+<tr><td>Border Default</td><td>border-gray-200</td><td>#E5E7EB</td><td>Card borders</td></tr>
+<tr><td>Error</td><td>text-red-700</td><td>#B91C1C</td><td>Validation errors</td></tr>
+<tr><td>Success</td><td>text-green-600</td><td>#16A34A</td><td>Confirmed payments</td></tr>
+<h3>Typography</h3>
+<tr><td>Element</td><td>Class</td><td>Size</td><td>Weight</td></tr>
+|---|---|---|---|
+<tr><td>Page Title</td><td>text-2xl font-bold</td><td>24px</td><td>700</td></tr>
+<tr><td>Section Heading</td><td>text-xl font-semibold</td><td>20px</td><td>600</td></tr>
+<tr><td>Card Heading</td><td>text-lg font-semibold</td><td>18px</td><td>600</td></tr>
+<tr><td>Sub-heading</td><td>text-base font-medium</td><td>16px</td><td>500</td></tr>
+<tr><td>Body</td><td>text-sm</td><td>14px</td><td>400</td></tr>
+<tr><td>Caption/Label</td><td>text-xs</td><td>12px</td><td>400–500</td></tr>
+<tr><td>Stat Number</td><td>text-3xl font-bold</td><td>30px</td><td>700</td></tr>
+<tr><td>Large Stat</td><td>text-5xl font-bold</td><td>48px</td><td>700 (admission cards)</td></tr>
+<li><strong>Font Family</strong>: System sans-serif via Tailwind default (Inter, system-ui, -apple-system)</li>
+<li><strong>Line Height</strong>: Tailwind defaults (1.25 for headings, 1.5 for body)</li>
+<li><strong>Letter Spacing</strong>: Default (no custom tracking)</li>
+<h3>Border Radius</h3>
+<tr><td>Token</td><td>Class</td><td>Value</td></tr>
+|---|---|---|
+<tr><td>Small</td><td>rounded</td><td>4px</td></tr>
+<tr><td>Medium</td><td>rounded-md</td><td>6px</td></tr>
+<tr><td>Large</td><td>rounded-lg</td><td>8px</td></tr>
+<tr><td>XL</td><td>rounded-xl</td><td>12px</td></tr>
+<tr><td>2XL</td><td>rounded-2xl</td><td>16px</td></tr>
+<tr><td>Full</td><td>rounded-full</td><td>9999px (badges, pills)</td></tr>
+<h3>Shadows</h3>
+<tr><td>Token</td><td>Class</td><td>Usage</td></tr>
+|---|---|---|
+<tr><td>Card</td><td>shadow-md</td><td>Standard card elevation</td></tr>
+<tr><td>Hover</td><td>shadow-lg</td><td>Hovered cards</td></tr>
+<tr><td>Small</td><td>shadow-sm</td><td>Subtle elevation</td></tr>
+<h3>Spacing Scale</h3>
+Tailwind 4px base: p-1(4px), p-2(8px), p-3(12px), p-4(16px), p-5(20px), p-6(24px), gap-2(8px), gap-4(16px)
+<h3>Grid System</h3>
+<li><strong>Layout grid</strong>: CSS Grid via Tailwind (grid-cols-1, grid-cols-2, grid-cols-3, grid-cols-4, grid-cols-5)</li>
+<li><strong>Responsive</strong>: md: prefix for ≥768px breakpoints</li>
+<li><strong>Page max-width</strong>: max-w-7xl (1280px) centered with mx-auto</li>
+<li><strong>Card grids</strong>: grid-cols-2 md:grid-cols-4 (stat cards), grid-cols-1 lg:grid-cols-3 (list + detail)</li>
+<h3>Breakpoints</h3>
+<tr><td>Name</td><td>Min Width</td><td>Tailwind prefix</td></tr>
+|---|---|---|
+<tr><td>Mobile</td><td>0px</td><td>(none)</td></tr>
+<tr><td>Tablet/md</td><td>768px</td><td>md:</td></tr>
+<tr><td>Desktop/lg</td><td>1024px</td><td>lg:</td></tr></tbody></table>
+<h3>Icon Library</h3>
+<strong>lucide-react</strong> — tree-shaken per-component. Commonly used:
+AlertTriangle, BedDouble, Bell, Briefcase, Calendar, CheckCircle, ChevronDown, ChevronUp, Clock, ClipboardList, Database, Download, Eye, FileText, FlaskConical, HardDrive, Heart, LogOut, Monitor, Network, Package, Paperclip, Pill, Plus, Receipt, Server, Shield, Syringe, Tag, Trash2, TrendingUp, Users, Wifi, Workflow, X, XCircle
+<h3>Component Naming Conventions</h3>
+<li>Interface components: <code>{Role}Interface</code> (e.g. DoctorInterface, CashierInterface)</li>
+<li>Report components: <code>{Name}Report</code> (StorageReport, IntranetSetupReport)</li>
+<li>Utility components: descriptive PascalCase (ProcessFlowDiagram, ExcelDownloader)</li>
+<li>Sub-components inline within parent files (PatientRow, PendingRow, AdmissionGroups)</li>
+</ul><li>UI primitives in <code>components/ui/</code> (shadcn/radix-ui patterns)</li>
+<hr style="margin:32px 0;border-color:#E5E7EB">
+<h2 id="s3">3. Layout</h2>
+<h3>Global Page Shell</h3>
+``<code>
+&lt;div class="size-full bg-gray-50 overflow-auto"&gt;
+  &lt;!-- Header bar: fixed height ~72px --&gt;
+  &lt;div class="bg-white shadow-sm border-b border-gray-200 px-6 py-4"&gt;
+    &lt;div class="max-w-7xl mx-auto flex justify-between items-center"&gt;
+      &lt;h1&gt;Hospital Management System&lt;/h1&gt;
+      &lt;div class="flex items-center gap-3"&gt;
+        &lt;!-- Report buttons + Logout --&gt;
+      &lt;/div&gt;
+    &lt;/div&gt;
+  &lt;/div&gt;
+  &lt;!-- Main content area --&gt;
+  &lt;div class="max-w-7xl mx-auto p-6"&gt;
+    &lt;!-- Role-specific interface component --&gt;
+  &lt;/div&gt;
+&lt;/div&gt;
+</code>``
+<h3>OPD Interface Layout</h3>
+<ul><li><strong>Tab bar</strong>: grid grid-cols-3 md:grid-cols-5 gap-2, ~48px height per tab</li>
+<li><strong>Registration panel</strong>: bg-white rounded-lg shadow-md p-6</li>
+<li><strong>Two-column grid</strong>: grid-cols-1 lg:grid-cols-2 gap-6 (form left, status right)</li>
+<li><strong>Admissions</strong>: 4-col stat cards + expandable panel below</li>
+<h3>Cashier Interface Layout</h3>
+<li><strong>Alert banners</strong>: full-width border-l-4 colored banners at top</li>
+<li><strong>Stat grid</strong>: grid-cols-2 md:grid-cols-6 gap-4 (6 summary cards)</li>
+<li><strong>Section tab</strong>: grid-cols-2 md:grid-cols-5 gap-2</li>
+<li><strong>Payment cards</strong>: space-y-4 max-h-[60vh] overflow-y-auto</li>
+<h3>Doctor Interface Layout</h3>
+<li><strong>Main tabs</strong>: flex gap-2, full-width 2 tabs</li>
+<li><strong>Outpatient</strong>: grid-cols-1 lg:grid-cols-3 (left: patient list, right: consultation form, span 2)</li>
+<li><strong>Admitted</strong>: grid-cols-1 lg:grid-cols-3 (left: admitted list, right: record detail, span 2)</li>
+<li><strong>Record tabs</strong>: flex gap-1 border-b overflow-x-auto (6 sub-tabs)</li>
+<h3>Lab Interface Layout</h3>
+<li><strong>Two tabs</strong>: regular vs walk-in</li>
+<li><strong>Test selection</strong>: category-grouped selects</li>
+<li><strong>Results textarea</strong>: full-width, rows={6}</li>
+<h3>Pharmacy Interface Layout</h3>
+<li><strong>Four tabs</strong>: dispensing, admitted orders, procurement, stock</li>
+<li><strong>Stock table</strong>: overflow-x-auto with inline edit inputs</li>
+<h3>Nursing Interface Layout</h3>
+<li><strong>Main views</strong>: 4 (Admitted, Detained, Dispensing, Injections)</li>
+<li><strong>Patient list + detail</strong>: lg:grid-cols-3 pattern</li>
+<li><strong>Daily care tabs</strong>: 4 sub-tabs (Medications, Observations, Vitals, Billing)</li>
+<li><strong>Pending admissions</strong>: collapsible section</li>
+<h3>Account Officer Layout</h3>
+<li><strong>Selector bar</strong>: time filter + report view selects</li>
+<li><strong>Report nav</strong>: flex flex-wrap gap-2</li>
+<li><strong>Charts</strong>: ResponsiveContainer width=100% height={300}</li>
+<li><strong>Transaction table</strong>: full-width with search</li>
+<h3>HR Interface Layout</h3>
+<li><strong>6 tabs</strong>: Dashboard, Employees, Absences, Recruitment, Procurement, Discounts</li>
+<li><strong>Employee cards</strong>: grid or table depending on sub-tab</li>
+<li><strong>Discount cards</strong>: vertical space-y-4 with border-2 colored cards</li>
+<h3>Responsive Behavior</h3>
+<li>All interfaces use <strong>mobile-first</strong> Tailwind, collapsing to single column on &lt;768px</li>
+<li>Max-width container (max-w-7xl) prevents excessive stretching on large displays</li>
+<li>Tables wrapped in overflow-x-auto for horizontal scroll on mobile</li>
+<li>Tab bars collapse to 2-column or scroll horizontally</li>
+<li>The app is <strong>primarily desktop-optimized</strong> (hospital kiosk use)</li>
+<h3>Overflow Handling</h3>
+<li>Scrollable lists: max-h-[calc(100vh-Xpx)] overflow-y-auto</li>
+<li>Tables: overflow-x-auto wrapper</li>
+</ul><li>Main page: overflow-auto on root div</li>
+<hr style="margin:32px 0;border-color:#E5E7EB">
+<h2 id="s4">4. Components</h2>
+<h3>PatientCard (inline in lists)</h3>
+<ul><li><strong>Purpose</strong>: Single-row or card entry for a patient in a list</li>
+<li><strong>Props</strong>: patient: Patient, isSelected: boolean, onClick: () =&gt; void</li>
+<li><strong>States</strong>: default, selected (border-blue-500 bg-blue-50), emergency (border-red-300 bg-red-50)</li>
+<li><strong>Contents</strong>: name (font-semibold), ID (text-xs), status badge, type badge</li>
+<h3>StatusBadge</h3>
+<li><strong>Purpose</strong>: Pill badge showing patient status or payment state</li>
+<li><strong>Variants</strong>: 'Partial' (yellow), 'Pending' (yellow), 'EMERGENCY' (red), 'WITH DOCTOR' (blue), 'OUTSIDE LAB' (orange), 'Awaiting Nursing' (orange), 'Discharge Billing' (amber), 'Discharged' (green)</li>
+<li><strong>Size</strong>: text-xs px-2 py-0.5 rounded-full font-semibold</li>
+<h3>PaymentBreakdownCard</h3>
+<li><strong>Purpose</strong>: Show Total Bill / Collected / Balance in 3-column grid</li>
+<li><strong>Props</strong>: totalBill, collected, balance</li>
+<li><strong>Colors</strong>: gray (total), green (collected), red if balance &gt; 0 else green (balance)</li>
+<h3>SummaryStatCard</h3>
+<li><strong>Purpose</strong>: Large number + label stat card (Cashier, HR, Account)</li>
+<li><strong>Props</strong>: label, value, color, onClick (optional expand)</li>
+<li><strong>States</strong>: default (border-transparent), active (border-{color}-300 shadow-md)</li>
+<li><strong>Used in</strong>: CashierInterface summary row, Admission groups, HR dashboard</li>
+<h3>TabBar</h3>
+<li><strong>Purpose</strong>: Horizontal tab navigation</li>
+<li><strong>Props</strong>: tabs: {id, label, badge?}[], active, onChange</li>
+<li><strong>Variants</strong>: standard (bg-{color}-600 active), grid layout (col-span-*)</li>
+<li><strong>Badge</strong>: white pill with colored text for counts</li>
+<h3>FormField</h3>
+<li><strong>Pattern</strong>: label + input/select/textarea stacked vertically</li>
+<li>``<code>tsx</li>
+  &lt;div&gt;
+    &lt;label className="block text-sm font-medium text-gray-700 mb-1"&gt;{label} *&lt;/label&gt;
+    &lt;input className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-{color}-500" /&gt;
+  &lt;/div&gt;
+  </code>``
+<h3>SectionPanel</h3>
+<li><strong>Purpose</strong>: White card container with title</li>
+<li><strong>Pattern</strong>: bg-white rounded-lg shadow-md p-6</li>
+<h3>AlertBanner</h3>
+<li><strong>Purpose</strong>: Full-width colored notification at page top</li>
+<li><strong>Pattern</strong>: bg-{color}-50 border-l-4 border-{color}-500 p-4 rounded-lg</li>
+<li><strong>Contents</strong>: icon + title + description + optional action button</li>
+<h3>DataTable</h3>
+<li><strong>Purpose</strong>: Sortable/filterable data display</li>
+<li><strong>Props</strong>: columns, rows, onRowClick?</li>
+<li><strong>Header</strong>: bg-{color}-50 or bg-gray-100</li>
+<li><strong>Row</strong>: hover:bg-{color}-50 transition, border-t border-gray-100</li>
+<li><strong>Footer</strong>: tfoot for totals row</li>
+<h3>DiscountRequestCard (HR Discounts tab)</h3>
+<li><strong>Purpose</strong>: Display a single discount request with approve/reject actions</li>
+<li><strong>States</strong>: pending (border-amber-300 bg-amber-50 header), approved (border-green-300), rejected (border-red-200)</li>
+<li><strong>Actions</strong>: Approve button (green) + rejection reason input + Reject button (red)</li>
+<h3>DischargeCard (Cashier Discharge Bills tab)</h3>
+<li><strong>Purpose</strong>: Patient discharge bill with itemised breakdown and payment input</li>
+<li><strong>Header</strong>: bg-green-700 with patient info</li>
+<li><strong>Body</strong>: Admission charges table + 3-stat summary + payment input</li>
+<h3>AdmissionGroupCard (OPD Admissions)</h3>
+<li><strong>Purpose</strong>: Clickable stat card that expands to patient list</li>
+<li><strong>Props</strong>: label, count, countColor, isActive, onClick</li>
+<li><strong>Active state</strong>: border-2 border-{color}-300 shadow-md</li>
+<li><strong>Expanded panel</strong>: colored left-border panel with patient table or card list</li>
+<h3>CodeBlock (IntranetSetupReport)</h3>
+<li><strong>Purpose</strong>: Syntax-highlighted code display with copy button</li>
+<li><strong>States</strong>: normal, copied (button text changes for 2s)</li>
+<h3>VitalsGrid</h3>
+<li><strong>Purpose</strong>: Display patient vitals in a compact grid</li>
+<li><strong>Fields</strong>: BP, HR, Temperature, RR, SpO2, Weight, Height</li>
+<h3>MedicationSearch (Doctor prescription)</h3>
+<li><strong>Purpose</strong>: Searchable dropdown for medication selection with auto-price fill</li>
+<li><strong>Props</strong>: index, value, onSearch, onSelect, onPriceChange</li>
+<li><strong>Behavior</strong>: Shows dropdown on focus, filters by typed text, closes on selection</li>
+<h3>OrderForm (Doctor admitted orders)</h3>
+<li><strong>Purpose</strong>: Place medication/injection/lab orders for admitted patients</li>
+<li><strong>Type selector</strong>: 3 toggle buttons (Medication, Injection, Lab Test)</li>
+</ul><li><strong>Dynamic body</strong>: Changes form based on type selection</li>
+<hr style="margin:32px 0;border-color:#E5E7EB">
+<h2 id="s5">5. Every Screen</h2>
+<h3>LoginScreen</h3>
+<ul><li><strong>Route</strong>: / (initial)</li>
+<li><strong>Layout</strong>: centered card, max-w-md, bg-white, shadow-lg, p-8</li>
+<li><strong>Fields</strong>: Username (text input), Role (select dropdown with 9 options)</li>
+<li><strong>Action</strong>: "Login" button (bg-blue-600, full-width)</li>
+<li><strong>Header</strong>: Hospital name + "Staff Login Portal" sub-title</li>
+<li><strong>Empty state</strong>: N/A</li>
+<li><strong>No auth validation</strong> — any username + role combination succeeds (intranet trust model)</li>
+<h3>OPD Interface</h3>
+<li><strong>Route</strong>: / (role=opd)</li>
+<li><strong>Tabs</strong>: Regular Patient | Emergency | Returning Patient | Maternity | Admissions (badge: admitted count)</li>
+<li><strong>Regular tab</strong>: Registration form left + Recent patients list right</li>
+<li><strong>Emergency tab</strong>: Registration form (with Total Bill + Cash Collected fields) left + Emergency status cards right</li>
+<li><strong>Returning tab</strong>: Search bar + matching patient cards + renewal vitals form</li>
+<li><strong>Maternity tab</strong>: Full maternity registration form (clinical + OB details)</li>
+<li><strong>Admissions tab</strong>: 4 clickable stat cards → expandable patient table/card list</li>
+<li><strong>Error state</strong>: Alert shown if required fields missing</li>
+<li><strong>Alert banners</strong>: Emergency cash pending + pending admissions count</li>
+<h3>Cashier Interface</h3>
+<li><strong>Route</strong>: / (role=cashier)</li>
+<li><strong>Alert banners</strong>: Discharge bills pending (green), Emergency cash pending (red), Walk-in lab pending (orange)</li>
+<li><strong>Stat row</strong>: 6 cards (Pending, Discharge Bills, Outstanding, Total Patients, Revenue, Balance Day button)</li>
+<li><strong>Tabs</strong>: Pending Payments | Discharge Bills | Outstanding Balances | PV | Discounts</li>
+<li><strong>Pending</strong>: Emergency + Walk-in + Regular sections with amount inputs + live balance previews</li>
+<li><strong>Discharge</strong>: Itemised admission charges + 3-stat summary + collect/discharge button</li>
+<li><strong>Outstanding</strong>: Table with patient, owed items, total billed, paid, balance, Record Payment input</li>
+<li><strong>PV</strong>: Add PV form + PV log table</li>
+<li><strong>Discounts</strong>: Patient picker form (3 steps) + Discount requests log + Free treatment record</li>
+<h3>Doctor Interface</h3>
+<li><strong>Route</strong>: / (role=doctor)</li>
+<li><strong>Main tabs</strong>: Out-Patient Consultations (badge: waiting count) | Admitted Patients (badge: admitted count)</li>
+<li><strong>Outpatient</strong>: Patient list (left 1/3) + Consultation panel (right 2/3)</li>
+  - Consultation: Patient info → Vitals → Lab Results (if available) → Doctor Notes textarea → Lab test selectors → Medication prescription → Actions (Admit, Complete, Download EHR)
+<li><strong>Admitted</strong>: Admitted list (left 1/3) + Detail panel (right 2/3)</li>
+  - Detail tabs: Overview &amp; Notes | Vitals | Medications | Observations | Charges | New Orders
+  - Header: Patient info + Discharge button (shows bill preview amount) or "Bill Sent to Cashier" status
+<li><strong>Discharge button states</strong>: Red "Discharge Patient" with ₦X bill preview → Amber "Bill Sent to Cashier" (after click) → Green "✓ Discharged" (after Cashier settles)</li>
+<h3>Lab Interface</h3>
+<li><strong>Route</strong>: / (role=lab)</li>
+<li><strong>Tabs</strong>: Regular Patients | Walk-in Registration</li>
+<li><strong>Regular</strong>: Lab queue (waiting patients) → select → mark results → submit</li>
+<li><strong>Walk-in</strong>: Full registration form + test selection by category + fee calculation + send to Cashier</li>
+<h3>Pharmacy Interface</h3>
+<li><strong>Route</strong>: / (role=pharmacy)</li>
+<li><strong>Tabs</strong>: OPD Dispensing | Admitted Orders | Procurement | Stock Management</li>
+<li><strong>OPD Dispensing</strong>: Patients with pharmacy_ready status → dispense confirmation</li>
+<li><strong>Admitted Orders</strong>: Medication orders from doctors for admitted patients → mark dispensed</li>
+<li><strong>Procurement</strong>: Add item form (drug name, qty, price) + submit to HR/Account</li>
+<li><strong>Stock</strong>: Drug inventory table with inline edit (dispensed, used quantities)</li>
+<h3>Nursing Interface</h3>
+<li><strong>Route</strong>: / (role=nurse)</li>
+<li><strong>Main views</strong>: Admitted Patients | Detained Patients | Dispensing Records | Injection Records</li>
+<li><strong>Pending Admissions</strong>: Collapsible section at top — cards for each pending_admission patient with "Process Admission" button → modal (ward, bed, next of kin, religion, doctor orders)</li>
+<li><strong>Admitted detail tabs</strong>: Medications (administer) | Observations (add note) | Vitals (record) | Billing (add charges)</li>
+<li><strong>Detention modal</strong>: Reason + initial observation</li>
+<li><strong>Discharge</strong>: "Process Discharge" button when dischargeRequested=true</li>
+<h3>Eye Clinic Interface</h3>
+<li><strong>Route</strong>: / (role=eyeclinic)</li>
+<li><strong>Tabs</strong>: Register Patient | Consultation | Patient Records</li>
+<li><strong>Register</strong>: New or returning patient, chief complaint</li>
+<li><strong>Consultation</strong>: Routine exam, external exam, service selection (checkboxes with prices), total calculation</li>
+<li><strong>Records</strong>: Searchable by card ID, view full history</li>
+<h3>Account Officer Interface</h3>
+<li><strong>Route</strong>: / (role=account)</li>
+<li><strong>Time filters</strong>: Today | Week | Month | All</li>
+<li><strong>Report views</strong>: Overview | Doctors | Lab | Pharmacy | Procurement | Outstanding | Discounts</li>
+<li><strong>Overview</strong>: Revenue stats + bar/line/pie charts + transaction table with search</li>
+<li><strong>Doctors</strong>: Per-doctor revenue + patient counts</li>
+<li><strong>Lab</strong>: Per-lab-tech performance</li>
+<li><strong>Pharmacy</strong>: Per-pharmacist performance</li>
+<li><strong>Procurement</strong>: Procurement history table</li>
+<li><strong>Outstanding</strong>: Table of patients with unpaid balances</li>
+<li><strong>Discounts</strong>: Approved discount register + all requests log</li>
+<li><strong>Export</strong>: Excel download button on each view</li>
+<h3>HR Interface</h3>
+<li><strong>Route</strong>: / (role=hr)</li>
+<li><strong>Alert banner</strong>: Discount requests pending (purple) at top</li>
+<li><strong>Tabs</strong>: Dashboard | Employees | Absences | Recruitment | Procurement | Discounts (badge: pending count)</li>
+<li><strong>Dashboard</strong>: Staff count stats + absence summary + procurement stats</li>
+<li><strong>Employees</strong>: List/table + Add form + Document management per employee</li>
+<li><strong>Absences</strong>: Log table with filter + Add absence form</li>
+<li><strong>Recruitment</strong>: Job requisitions + Candidates per requisition</li>
+<li><strong>Procurement</strong>: All procurement orders + approve/update status</li>
+</ul><li><strong>Discounts</strong>: Discount request cards with Approve / Reject actions</li>
+<hr style="margin:32px 0;border-color:#E5E7EB">
+<h2 id="s6">6. Forms</h2>
+<h3>Regular Patient Registration</h3>
+<table><thead><tr><th>Field</th><th>Type</th><th>Required</th><th>Validation</th><th>Placeholder</th></tr></thead><tbody><tr><td>Clinical Card Type</td><td>select</td><td>Yes</td><td>—</td><td>—</td></tr>
+<tr><td>Card Holder Name</td><td>text</td><td>If Family/Company</td><td>min 2 chars</td><td>"e.g. Okafor Family"</td></tr>
+<tr><td>Patient Name</td><td>text</td><td>Yes</td><td>min 2 chars</td><td>"Full name"</td></tr>
+<tr><td>Date of Birth</td><td>date</td><td>Yes</td><td>past dates only</td><td>—</td></tr>
+<tr><td>Gender</td><td>select</td><td>Yes</td><td>Male/Female</td><td>—</td></tr>
+<tr><td>Marital Status</td><td>select</td><td>Yes</td><td>Single/Married/Divorced/Widowed</td><td>—</td></tr>
+<tr><td>Phone Number</td><td>tel</td><td>Yes</td><td>min 7 digits</td><td>"08XXXXXXXXX"</td></tr>
+<tr><td>Email</td><td>email</td><td>No</td><td>email format</td><td>"Optional"</td></tr>
+<tr><td>Address</td><td>text</td><td>Yes</td><td>min 5 chars</td><td>"Street, City"</td></tr>
+<tr><td>Age Category</td><td>radio</td><td>Yes</td><td>Child/Adult</td><td>—</td></tr>
+<tr><td>Vitals (BP, HR, Temp, RR, SpO2, Weight, Height)</td><td>number/text</td><td>No</td><td>numeric ranges</td><td>e.g. "120/80"</td></tr>
+<strong>Error messages</strong>: Alert dialog on submit if required fields missing.
+<strong>Consultation fee auto-added</strong>: ₦5,000 payment record created on registration.
+<h3>Emergency Patient Registration</h3>
+<tr><td>Field</td><td>Type</td><td>Required</td><td>Notes</td></tr>
+|---|---|---|---|
+<tr><td>(All regular fields)</td><td>—</td><td>Yes</td><td>Same as above</td></tr>
+<tr><td>Total Bill Amount</td><td>number</td><td>No</td><td>Defaults to cashCollected if blank</td></tr>
+<tr><td>Cash Collected at OPD</td><td>number</td><td>Yes</td><td>min = CONSULTATION_FEE (₦5,000)</td></tr>
+<strong>Live balance preview</strong>: Amber box shows when collected &lt; total bill.
+<strong>Error</strong>: Alert if cashCollected &lt; CONSULTATION_FEE.
+<h3>Maternity Registration</h3>
+All regular fields plus:
+<tr><td>Field</td><td>Type</td><td>Required</td></tr>
+|---|---|---|
+<tr><td>Expected Delivery Date</td><td>date</td><td>No</td></tr>
+<tr><td>Gestational Age</td><td>text</td><td>No</td></tr>
+<tr><td>Tribe</td><td>text</td><td>No</td></tr>
+<tr><td>Occupation</td><td>text</td><td>No</td></tr>
+<tr><td>Gravida</td><td>number</td><td>No</td></tr>
+<tr><td>Para</td><td>number</td><td>No</td></tr>
+<tr><td>Abortion</td><td>number</td><td>No</td></tr>
+<tr><td>Premature</td><td>number</td><td>No</td></tr>
+<tr><td>Last Menstrual Period</td><td>date</td><td>No</td></tr>
+<h3>Doctor Notes &amp; Lab Orders</h3>
+<tr><td>Field</td><td>Type</td><td>Notes</td></tr>
+|---|---|---|
+<tr><td>Doctor's Notes</td><td>textarea</td><td>rows=4, free text</td></tr>
+<tr><td>Lab Test Selectors</td><td>select per category</td><td>onChange → adds to selectedLabTests</td></tr>
+<tr><td>Medication Search</td><td>text + dropdown</td><td>Filters MEDICATION_LIST (130+ items, alphabetically sorted)</td></tr>
+<tr><td>Medication Quantity</td><td>text</td><td>e.g. "1 card", "2 bottles"</td></tr>
+<tr><td>Medication Frequency</td><td>text</td><td>e.g. "BD", "TDS", "3× daily"</td></tr>
+<tr><td>Medication Price</td><td>number</td><td>Auto-filled from MEDICATION_LIST if price &gt; 0</td></tr>
+<h3>Admission Order Form (Doctor)</h3>
+<tr><td>Field</td><td>Type</td><td>Options</td></tr>
+|---|---|---|
+<tr><td>Order Type</td><td>toggle buttons</td><td>Medication / Injection / Lab Test</td></tr>
+<tr><td>Item Name</td><td>select</td><td>Filters from MEDICATION_LIST by type</td></tr>
+<tr><td>Dose</td><td>text</td><td>Free entry</td></tr>
+<tr><td>Quantity</td><td>text</td><td>Free entry</td></tr>
+<tr><td>Frequency</td><td>text</td><td>Medication only</td></tr>
+<tr><td>Order Notes</td><td>text</td><td>Optional</td></tr>
+<h3>Cashier PV (Payment Vitae)</h3>
+<tr><td>Field</td><td>Required</td><td>Validation</td></tr>
+|---|---|---|
+<tr><td>Name of Person</td><td>Yes</td><td>non-empty</td></tr>
+<tr><td>Purpose</td><td>Yes</td><td>non-empty</td></tr>
+<tr><td>Amount (₦)</td><td>Yes</td><td>numeric &gt; 0</td></tr>
+<tr><td>Approved By</td><td>No</td><td>defaults to "Doctor"</td></tr>
+<h3>Discount Request Form</h3>
+<tr><td>Field</td><td>Required</td><td>Notes</td></tr>
+|---|---|---|
+<tr><td>Patient selection</td><td>Yes</td><td>From combined pending/outstanding/discharge list</td></tr>
+<tr><td>Discount Amount (₦)</td><td>Yes</td><td>1 ≤ amount ≤ current balance</td></tr>
+<tr><td>Reason</td><td>Yes</td><td>Free text, descriptive</td></tr>
+<tr><td>Quick % buttons</td><td>—</td><td>10%, 20%, 25%, 50% auto-fill</td></tr>
+<strong>Validation</strong>: Amount must be &gt; 0 and ≤ balance. Reason must be non-empty.
+<strong>Preview</strong>: Live preview of new balance after discount.
+<h3>Employee Registration (HR)</h3>
+<tr><td>Field</td><td>Type</td><td>Required</td><td>Options</td></tr>
+|---|---|---|---|
+<tr><td>Name</td><td>text</td><td>Yes</td><td>—</td></tr>
+<tr><td>Role</td><td>select</td><td>Yes</td><td>Doctor/Nurse/Pharmacist/Security/Day Worker/Night Worker</td></tr>
+<tr><td>Phone Number</td><td>tel</td><td>Yes</td><td>—</td></tr>
+<tr><td>Email</td><td>email</td><td>No</td><td>—</td></tr>
+<tr><td>Shift</td><td>select</td><td>No</td><td>Day/Night</td></tr>
+<h3>Absence Record (HR)</h3>
+<tr><td>Field</td><td>Required</td><td>Options</td></tr>
+|---|---|---|
+<tr><td>Employee</td><td>Yes</td><td>Select from employees list</td></tr>
+<tr><td>Date</td><td>Yes</td><td>date picker</td></tr>
+<tr><td>Reason</td><td>Yes</td><td>Free text</td></tr>
+<tr><td>Status</td><td>Yes</td><td>Sick Leave / Personal Leave / Unauthorized / Vacation</td></tr>
+<h3>Procurement Form (HR/Pharmacy)</h3>
+<tr><td>Field</td><td>Per Item</td><td>Required</td></tr>
+|---|---|---|
+<tr><td>Item Name</td><td>Yes</td><td>Free text</td></tr>
+<tr><td>Category</td><td>Yes</td><td>Medication / Office Supply</td></tr>
+<tr><td>Quantity</td><td>Yes</td><td>positive integer</td></tr>
+<tr><td>Price per Unit (₦)</td><td>Yes</td><td>positive number</td></tr></tbody></table>
+<strong>Total calculated</strong>: quantity × price per item, grand total of all items.
+<hr style="margin:32px 0;border-color:#E5E7EB">
+<h2 id="s7">7. Tables</h2>
+<h3>Patient Transaction Table (Account Officer)</h3>
+<ul><li><strong>Columns</strong>: Date/Time, Patient Name, Patient ID, Type, Payment Type, Amount Billed, Amount Paid, Balance, Status, Department, Doctor/Tech/Pharmacist</li>
+<li><strong>Sorting</strong>: By date (default desc)</li>
+<li><strong>Filtering</strong>: Time filter (today/week/month/all) + search by patient name/ID</li>
+<li><strong>Pagination</strong>: None (all in scrollable div with max-height)</li>
+<li><strong>Row actions</strong>: None (read-only)</li>
+<li><strong>Selection</strong>: None</li>
+<h3>Outstanding Balances Table (Cashier + Account Officer)</h3>
+<li><strong>Columns</strong>: Patient, What is Owed (partial payment items), Total Billed, Paid, Balance</li>
+<li><strong>Footer row</strong>: TOTALS with sum of all columns</li>
+<li><strong>Row action</strong>: Amount input + Record Payment button (inline)</li>
+<li><strong>Sorting</strong>: None</li>
+<li><strong>Search</strong>: None</li>
+<h3>Admitted Patients Table (OPD Admissions + Doctor)</h3>
+<li><strong>Columns</strong>: Patient (name/ID/phone), Ward/Bed, Doctor, Admitted (date + days ago), Notes/Diagnosis, Type badge, Balance</li>
+<li><strong>Grouping</strong>: Separated into Currently Admitted / Maternity Ward / General Ward</li>
+<h3>Lab Queue Table (Lab Interface)</h3>
+<li><strong>Columns</strong>: Patient name, ID, Tests ordered (with prices), Total, Status</li>
+<li><strong>Row action</strong>: Select to open result entry</li>
+<h3>Pharmacy Stock Table</h3>
+<li><strong>Columns</strong>: Drug name, Total received, Dispensed, Used/Expired, Current stock</li>
+<li><strong>Row action</strong>: Inline edit (number inputs for dispensed/used)</li>
+<h3>Procurement Table (HR)</h3>
+<li><strong>Columns</strong>: Date, Ordered by, Items (count), Total Amount, Status, Actions</li>
+<li><strong>Row action</strong>: Approve / mark completed (dropdown or button)</li>
+<h3>Discount Requests Table (Cashier Discounts tab)</h3>
+<li><strong>Columns</strong>: Patient, Bill Type, Balance, Discount (₦), After Discount, Reason, Status, Date</li>
+<li><strong>Status badge</strong>: PENDING (amber), APPROVED (green), REJECTED (red)</li>
+<li><strong>Sorting</strong>: Newest first</li>
+<h3>PV (Payment Vitae) Log Table (Cashier)</h3>
+<li><strong>Columns</strong>: PV No., Date, Person, Purpose, Amount (₦), Approved By, Delete button</li>
+<li><strong>Footer</strong>: TOTAL DISBURSED</li>
+<li><strong>Row action</strong>: Delete (Trash2 icon)</li>
+<h3>Nursing Charges Table (Nursing billing tab)</h3>
+<li><strong>Columns</strong>: Date, Description, Category, Amount</li>
+<li><strong>Footer</strong>: Total Charged, Payments Made, Outstanding</li>
+<li><strong>Add form</strong>: Description text, Amount number, Category select, Add button</li>
+<h3>Employee Document Table (HR Employees)</h3>
+<li><strong>Columns</strong>: Document Name, Type, File Path, Upload Date, Delete</li>
+</ul><li><strong>Row action</strong>: Delete button</li>
+<hr style="margin:32px 0;border-color:#E5E7EB">
+<h2 id="s8">8. Navigation</h2>
+<h3>Top Header Bar</h3>
+<ul><li><strong>Height</strong>: ~72px</li>
+<li><strong>Background</strong>: bg-white shadow-sm border-b border-gray-200</li>
+<li><strong>Left</strong>: Hospital name (text-2xl font-bold) + role/username (text-sm text-gray-600)</li>
+<li><strong>Right button group</strong>: [Intranet Guide] [Storage Report] [Show Process Flow] [Reset Demo] [Logout]</li>
+<li><strong>Button styles</strong>: Each has distinct bg color (slate-700, green-700, purple-600, amber-500, red-500)</li>
+<li><strong>Toggle behavior</strong>: Clicking a report button sets showX = true and hides the main interface</li>
+<h3>Tab Navigation (within interfaces)</h3>
+<li><strong>Pattern</strong>: grid or flex container of buttons</li>
+<li><strong>Active</strong>: bg-{color}-600 text-white</li>
+<li><strong>Inactive</strong>: bg-gray-100 text-gray-700 hover:bg-gray-200</li>
+<li><strong>With badge</strong>: White pill showing count</li>
+<h3>Admission Group Cards (OPD)</h3>
+<li><strong>Pattern</strong>: 4 stat cards that act as tab selectors</li>
+<li><strong>One open at a time</strong>: clicking active card collapses it</li>
+<li><strong>Panel</strong>: Slides in below the 4-card row</li>
+<h3>Doctor Record Sub-tabs</h3>
+<li><strong>Pattern</strong>: border-b flex overflow-x-auto</li>
+<li><strong>Active indicator</strong>: border-b-2 border-teal-600 text-teal-600</li>
+<li><strong>Tabs</strong>: Overview &amp; Notes | Vitals | Medications | Observations | Charges | New Orders</li>
+<h3>Process Flow Overlay</h3>
+<li><strong>Trigger</strong>: "Show Process Flow" button in header</li>
+<li><strong>Behavior</strong>: Renders above main interface content (prepended in max-w-7xl div)</li>
+<li><strong>Dismissal</strong>: Click "Hide Process Flow" button</li>
+<h3>Modals (Nursing Interface)</h3>
+<li><strong>Admission modal</strong>: Fixed overlay for ward/bed/next-of-kin assignment</li>
+<li><strong>Detention modal</strong>: Fixed overlay for detention reason</li>
+<li><strong>Pattern</strong>: fixed inset-0 bg-black/50 z-50, centered white card</li>
+<h3>Drawers/Expandable panels</h3>
+<li><strong>Discount request form</strong>: Toggle per-patient in Pending Payments (slide-in inline)</li>
+<li><strong>Admission group panels</strong>: Animate in below card row</li>
+<li><strong>Balance previews</strong>: Conditional render with colored box</li>
+</ul>
+<h3>No dedicated sidebar or breadcrumbs — single-depth routing via role gating</h3>
+<hr style="margin:32px 0;border-color:#E5E7EB">
+<h2 id="s9">9. User Interactions</h2>
+<h3>Clicks</h3>
+<ul><li><strong>Tab selection</strong>: Updates activeTab state → re-renders interface section</li>
+<li><strong>Patient card click</strong>: Sets selectedPatient/selectedAdmitted → populates detail panel</li>
+<li><strong>Stat card click</strong> (OPD admissions): Toggles activeAdmissionCard → shows/hides patient panel</li>
+<li><strong>"Discharge Patient" button</strong>: Runs handleRequestDischarge → computes discharge bill → shows confirm() dialog</li>
+<li><strong>"Collect &amp; Discharge" button</strong>: Calls handleSettleDischarge → if fully paid sets status='discharged'</li>
+<li><strong>Lab test select onChange</strong>: Adds test to selectedLabTests array (prevents duplicates)</li>
+<li><strong>"Submit Discount Request → HR" button</strong>: Calls addDiscountRequest → alert confirmation</li>
+<li><strong>HR Approve Discount</strong>: updateDiscountRequest({status:'approved'}) + alert</li>
+<li><strong>HR Reject Discount</strong>: Requires reason input → updateDiscountRequest({status:'rejected', rejectionReason})</li>
+<li><strong>Copy button</strong> (code blocks): navigator.clipboard.writeText → shows "✓ Copied" for 2s</li>
+<li><strong>Download SVG/PNG</strong> (Process Flow): Serializes SVG → creates Blob → triggers anchor download</li>
+<li><strong>Download Report</strong> (Storage/Intranet): Generates HTML string → Blob → anchor download</li>
+<li><strong>Reset Demo button</strong>: confirm() dialog → localStorage.clear() → window.location.reload()</li>
+<h3>Form Submissions</h3>
+<li>All major forms use onSubmit with e.preventDefault()</li>
+<li>Validation via if-guards + alert() for errors</li>
+<li>Success: alert() confirmation + state reset + patient added/updated</li>
+<h3>Hover Behavior</h3>
+<li>Buttons: hover:bg-{color}-700 (darker shade)</li>
+<li>Table rows: hover:bg-{color}-50</li>
+<li>Stat cards: hover:shadow-md hover:border-gray-200</li>
+<li>Navigation tabs: hover:bg-gray-200</li>
+<h3>Keyboard</h3>
+<li>No custom keyboard shortcuts documented</li>
+<li>Standard browser tab order for forms</li>
+<li>Enter submits forms</li>
+<h3>Animations &amp; Transitions</h3>
+<li>Button hover: transition (Tailwind default 150ms ease)</li>
+<li>Tab switches: immediate (no animation)</li>
+<li>Expandable panels: immediate show/hide (no CSS transition)</li>
+<li>Live balance preview: renders instantly on input change</li>
+<h3>Micro-interactions</h3>
+<li><strong>Payment amount input</strong>: Updates "Confirm ₦X Received" button label in real-time</li>
+<li><strong>Discount amount input</strong>: Live "New balance if approved: ₦X" preview</li>
+<li><strong>Emergency cash input</strong>: Amber/green box appears with payment breakdown</li>
+<li><strong>Medication search dropdown</strong>: Shows/hides on focus/blur</li>
+<li><strong>% shortcut buttons</strong>: Click auto-fills discount amount input</li>
+<li><strong>Cashier balance preview</strong>: Amber for partial, green for full payment</li>
+<li><strong>Discharge button</strong>: Shows ₦X discharge bill preview before click</li>
+</ul>
+<h3>Alert dialogs (native browser)</h3>
+Used for: confirmations before destructive actions, success messages, error messages.
+Pattern: <code>if (!confirm('...')) return;</code> or <code>alert('...')</code>
+<h3>Drag and Drop</h3>
+Not implemented.
+<h3>Double-clicks</h3>
+Not implemented.
+<hr style="margin:32px 0;border-color:#E5E7EB">
+<h2 id="s10">10. Assets</h2>
+<h3>Images</h3>
+<ul><li><code>/src/imports/image-2.png</code> — Reference design screenshot used for admission card UI design guidance</li>
+<h3>Icons</h3>
+All icons from <strong>lucide-react</strong> package. No custom SVG icon files. Icons used inline as JSX components.
+<p>Full list of icons used across the application:
+<code>Activity, AlertCircle, AlertTriangle, Baby, BarChart3, BedDouble, Bell, Briefcase, Calendar, Camera, CheckCircle, ChevronDown, ChevronRight, ChevronUp, Clock, ClipboardList, Database, Download, Eye, FileText, FlaskConical, HardDrive, Heart, LogOut, Monitor, Network, Package, Paperclip, Pill, Plus, Receipt, Server, Shield, Stethoscope, Syringe, Tag, Trash2, TrendingUp, Users, Wifi, Workflow, X, XCircle</code></p>
+<h3>SVGs</h3>
+<li>The Process Flow Diagram is a hand-coded <code>&lt;svg&gt;</code> element (2400×3800 viewBox)</li>
+<li>No external SVG files</li>
+<h3>Logos</h3>
+<li>No logo image — hospital name rendered as text: "Hospital Management System"</li>
+<h3>Backgrounds</h3>
+<li>No background images — solid bg-gray-50 page background</li>
+<h3>Illustrations</h3>
+<li>No illustrations</li>
+<h3>Videos</h3>
+<li>None</li>
+<h3>Reports (dynamically generated)</h3>
+<li><code>ZMC_EHR_Server_Storage_Report_5Years.html</code> — generated HTML download</li>
+<li><code>ZMC_Intranet_Setup_Guide.html</code> — generated HTML download</li>
+<li><code>ZMC_Process_Flow.svg</code> / <code>.png</code> — SVG/PNG download</li>
+</ul><li><code>*.xlsx</code> — Excel reports (multiple, generated via XLSX library)</li>
+<hr style="margin:32px 0;border-color:#E5E7EB">
+<h2 id="s11">11. Accessibility</h2>
+<h3>Current Implementation Gaps</h3>
+The application was built for a controlled intranet environment (staff-only access). Formal WCAG compliance was not the primary focus.
+<h3>Color Contrast</h3>
+<table><thead><tr><th>Combination</th><th>Ratio (approx)</th><th>Passes AA (4.5:1)?</th></tr></thead><tbody><tr><td>White text on bg-blue-600 (#2563EB)</td><td>~4.6:1</td><td>✓</td></tr>
+<tr><td>White text on bg-red-600 (#DC2626)</td><td>~4.5:1</td><td>✓</td></tr>
+<tr><td>White text on bg-green-600 (#16A34A)</td><td>~4.6:1</td><td>✓</td></tr>
+<tr><td>text-gray-900 on bg-white</td><td>~18:1</td><td>✓</td></tr>
+<tr><td>text-gray-600 on bg-white</td><td>~7.1:1</td><td>✓</td></tr>
+<tr><td>text-gray-400 on bg-white</td><td>~3.5:1</td><td>✗ (muted captions)</td></tr>
+<tr><td>White text on bg-amber-600</td><td>~3.1:1</td><td>✗ (needs fix)</td></tr>
+<h3>Keyboard Navigation</h3>
+<ul><li>All interactive elements are standard HTML <code>&lt;button&gt;</code>, <code>&lt;input&gt;</code>, <code>&lt;select&gt;</code>, <code>&lt;textarea&gt;</code></li>
+<li>Native keyboard tab order preserved</li>
+<li>No custom focus trapping in modals (recommendation: add)</li>
+<li>No keyboard shortcuts for tab switching</li>
+<h3>Focus Indicators</h3>
+<li>Tailwind: <code>focus:outline-none focus:ring-2 focus:ring-{color}-500</code> on all inputs</li>
+<li>Buttons: default browser outline (should ensure visible focus ring)</li>
+<h3>ARIA Recommendations</h3>
+<tr><td>Element</td><td>Recommendation</td></tr>
+|---|---|
+<tr><td>Status badges</td><td><code>aria-label="Patient status: EMERGENCY"</code></td></tr>
+<tr><td>Tab buttons</td><td><code>role="tab"</code>, <code>aria-selected</code>, <code>aria-controls</code></td></tr>
+<tr><td>Modal overlays</td><td><code>role="dialog"</code>, <code>aria-modal="true"</code>, <code>aria-labelledby</code></td></tr>
+<tr><td>Alert banners</td><td><code>role="alert"</code> or <code>aria-live="polite"</code></td></tr>
+<tr><td>Tables</td><td><code>scope="col"</code> on <code>&lt;th&gt;</code> elements</td></tr>
+<tr><td>Icon-only buttons</td><td><code>aria-label</code> on icon-only buttons</td></tr>
+<tr><td>Progress/loading</td><td><code>aria-busy="true"</code> during async operations</td></tr></tbody></table>
+<h3>Semantic HTML Recommendations</h3>
+<li>Use <code>&lt;main&gt;</code> for the primary content area</li>
+<li>Use <code>&lt;nav&gt;</code> for tab bars</li>
+<li>Use <code>&lt;section&gt;</code> with <code>aria-label</code> for major interface sections</li>
+<li>Use <code>&lt;form&gt;</code> with <code>aria-describedby</code> for form error regions</li>
+<li>Use <code>&lt;caption&gt;</code> on data tables</li>
+<li>Use <code>&lt;thead&gt;</code>, <code>&lt;tbody&gt;</code>, <code>&lt;tfoot&gt;</code> consistently (currently used)</li>
+<h3>Screen Reader Notes</h3>
+<li>Dynamic status updates (e.g. payment confirmed) should use <code>aria-live="assertive"</code> regions</li>
+<li>Form validation errors should be associated with fields via <code>aria-describedby</code></li>
+</ul><li>Patient name in list items should include status in accessible text</li>
+<hr style="margin:32px 0;border-color:#E5E7EB">
+<h2 id="s12">12. Responsive Behavior</h2>
+<h3>Mobile (&lt;768px)</h3>
+<ul><li><strong>Header</strong>: Wraps to 2 lines; report buttons may overflow (no mobile-specific header implemented)</li>
+<li><strong>Tab bars</strong>: grid-cols-2 (most interfaces) or grid-cols-3; labels may truncate</li>
+<li><strong>Registration forms</strong>: Single column (grid-cols-1 default)</li>
+<li><strong>Patient list + detail</strong>: Stacks vertically (single column)</li>
+<li><strong>Admission stat cards</strong>: grid-cols-2 (2×2 grid)</li>
+<li><strong>Tables</strong>: overflow-x-auto with horizontal scroll</li>
+<li><strong>Charts</strong>: ResponsiveContainer scales down</li>
+<li><strong>Cashier stat row</strong>: grid-cols-2</li>
+<li><strong>Doctor tabs (admitted sub-tabs)</strong>: overflow-x-auto horizontal scroll</li>
+<h3>Tablet (768px–1024px / md: breakpoint)</h3>
+<li><strong>Tab bars</strong>: Full row with md:grid-cols-5 or md:grid-cols-4</li>
+<li><strong>Registration forms</strong>: 2-column grid (grid-cols-2 gap-3)</li>
+<li><strong>Patient list + detail</strong>: Still single column (lg: needed for split)</li>
+<li><strong>Admission stat cards</strong>: md:grid-cols-4 (single row)</li>
+<li><strong>Cashier stat row</strong>: md:grid-cols-6</li>
+<h3>Desktop (≥1024px / lg: breakpoint)</h3>
+<li><strong>Patient list + detail</strong>: lg:grid-cols-3 split (left: 1/3, right: 2/3)</li>
+<li><strong>All forms</strong>: Full 2-column layouts</li>
+<li><strong>Charts</strong>: Full responsive containers</li>
+<h3>Large Desktop (≥1280px)</h3>
+<li><strong>Max-width container</strong>: max-w-7xl (1280px) constrains width</li>
+<li><strong>Content</strong>: Centered with padding; no additional layout changes</li>
+</ul>
+<h3>Known Mobile Issues</h3>
+<li>The top header button row likely overflows on small screens (no flex-wrap or hamburger menu)</li>
+<li>Complex tables (12+ columns) require horizontal scroll</li>
+<li>SVG Process Flow diagram (2400px wide) will require horizontal scroll on all non-large-desktop screens</li>
+<li>Modals (Nursing) may overflow on very small screens (no responsive positioning)</li>
+<li>Medication search dropdown may be difficult to use on touch devices</li>
+<hr style="margin:32px 0;border-color:#E5E7EB">
+<h2 id="s13">13. Recommended Technical Architecture</h2>
+<h3>React Component Hierarchy</h3>
+``<code>
+App (root)
+├── LoginScreen
+└── [Authenticated]
+    ├── Header (inline in App.tsx)
+    ├── StorageReport (overlay)
+    ├── IntranetSetupReport (overlay)
+    ├── ProcessFlowDiagram (overlay)
+    └── [Role Interface]
+        ├── OPDInterface
+        │   ├── AdmissionGroups
+        │   │   ├── AdmittedPatientRow
+        │   │   └── PendingAdmissionRow
+        │   └── (form sections inline)
+        ├── CashierInterface
+        ├── DoctorInterface
+        ├── LabInterface
+        ├── PharmacyInterface
+        ├── NursingInterface
+        ├── EyeClinicInterface
+        ├── AccountOfficerInterface
+        └── HRInterface
+            ├── EmployeesTab
+            ├── AbsencesTab
+            ├── RecruitmentTab
+            ├── ProcurementTab
+            └── (Discounts inline)
+</code>`<code>
+<h3>Suggested Folder Structure</h3>
+</code>`<code>
+src/
+├── app/
+│   ├── App.tsx                    # Root, state, routing
+│   ├── components/
+│   │   ├── ui/                    # shadcn/radix primitives
+│   │   ├── LoginScreen.tsx
+│   │   ├── OPDInterface.tsx
+│   │   ├── CashierInterface.tsx
+│   │   ├── DoctorInterface.tsx
+│   │   ├── LabInterface.tsx
+│   │   ├── PharmacyInterface.tsx
+│   │   ├── NursingInterface.tsx
+│   │   ├── EyeClinicInterface.tsx
+│   │   ├── AccountOfficerInterface.tsx
+│   │   ├── HRInterface.tsx
+│   │   ├── ProcessFlowDiagram.tsx
+│   │   ├── ExcelDownloader.tsx
+│   │   ├── StorageReport.tsx
+│   │   ├── IntranetSetupReport.tsx
+│   │   └── SpecDocument.tsx
+│   ├── data/
+│   │   ├── seedData.ts            # Demo patients, employees, etc.
+│   │   ├── seedEyeClinic.ts
+│   │   └── medicationList.ts      # Extract from DoctorInterface
+│   ├── utils/
+│   │   ├── downloadEHR.ts
+│   │   └── utils.ts
+│   └── hooks/
+│       └── use-mobile.ts
+├── imports/                       # Static assets
+└── styles/
+    ├── fonts.css
+    ├── theme.css
+    └── index.css
+</code>`<code>
+<h3>Routing Structure</h3>
+<strong>Current</strong>: No URL routing — all state in React. Role determines rendered component.
+<strong>Recommended for production</strong>:
+</code>`<code>
+/ → LoginScreen (unauthenticated)
+/opd → OPDInterface
+/cashier → CashierInterface
+/doctor → DoctorInterface
+/lab → LabInterface
+/pharmacy → PharmacyInterface
+/nurse → NursingInterface
+/eyeclinic → EyeClinicInterface
+/accounts → AccountOfficerInterface
+/hr → HRInterface
+</code>`<code>
+Use react-router v7 (already installed) with protected route wrapper.
+<h3>State Management</h3>
+<strong>Current</strong>: All state in App.tsx passed as props (prop drilling).
+<strong>For production migration</strong>:
+<ul><li>Zustand or Redux Toolkit for shared state (patients, employees, discountRequests)</li>
+<li>React Query (TanStack Query) for server-state once API backend is connected</li>
+<li>Separate slices per domain: patients, hr, cashier, pharmacy</li>
+<h3>API Boundaries (for intranet server migration)</h3>
+<table><thead><tr><th>Domain</th><th>Endpoints</th></tr></thead><tbody><tr><td>Auth</td><td>POST /api/login, POST /api/logout</td></tr>
+<tr><td>Patients</td><td>GET/POST /api/patients, PATCH /api/patients/:id</td></tr>
+<tr><td>Payments</td><td>POST /api/payments, PATCH /api/payments/:id</td></tr>
+<tr><td>Discounts</td><td>GET/POST /api/discounts, PATCH /api/discounts/:id</td></tr>
+<tr><td>Employees</td><td>GET/POST/PATCH/DELETE /api/employees/:id</td></tr>
+<tr><td>Absences</td><td>GET/POST /api/absences</td></tr>
+<tr><td>Procurement</td><td>GET/POST/PATCH /api/procurement</td></tr>
+<tr><td>Lab Results</td><td>PATCH /api/patients/:id/lab-results</td></tr>
+<tr><td>Notifications</td><td>WebSocket ws://server/ws (see Intranet Guide)</td></tr></tbody></table>
+<h3>Data Models (TypeScript interfaces — already defined in App.tsx)</h3>
+Key models:
+<li><strong>Patient</strong>: 40+ fields; central record passed between all departments</li>
+<li><strong>Payment</strong>: amount (total bill), amountPaid (collected), status, discountAmount</li>
+<li><strong>DiscountRequest</strong>: tracks full approval lifecycle Cashier→HR→Account</li>
+<li><strong>Employee</strong>: HR staff records</li>
+<li><strong>Procurement</strong>: Multi-item purchase orders</li>
+<li><strong>AdmissionOrder</strong>: Doctor orders for admitted patients (medication/injection/lab)</li>
+<h3>Persistence</h3>
+<strong>Current</strong>: localStorage with keys:
+<li></code>hospital_patients<code></li>
+<li></code>hospital_employees<code></li>
+<li></code>hospital_absences<code></li>
+<li></code>hospital_requisitions<code></li>
+<li></code>hospital_candidates<code></li>
+<li></code>hospital_procurements<code></li>
+<li></code>hospital_discount_requests<code></li>
+<li></code>cashier_pv_entries<code></li>
+<li></code>cashier_nocharge_entries<code></li>
+<li>Eye clinic records: </code>eye_clinic_records<code></li>
+<li>Pharmacy stock: </code>pharmacy_stock<code></li>
+<li>Nursing dispensing: </code>nursing_dispensing<code></li>
+<li>Nursing injections: </code>nursing_injections`</li>
+</ul>
+<strong>For production</strong>: Migrate to PostgreSQL via Node.js/Express API (full setup in IntranetSetupReport)
+<hr style="margin:32px 0;border-color:#E5E7EB">
+<h2 id="s14">14. Developer Notes</h2>
+<h3>Ambiguities &amp; Implementation Decisions Required</h3>
+<h4>1. Authentication</h4>
+<ul><li><strong>Current</strong>: No real authentication — any username + role works</li>
+<li><strong>Decision needed</strong>: Implement bcrypt password verification, JWT tokens, session expiry (8h)</li>
+<li><strong>Reference</strong>: Full server.js implementation in IntranetSetupReport</li>
+<h4>2. Payment Status Semantics</h4>
+<li><code>amount</code> = total bill amount</li>
+<li><code>amountPaid</code> = amount actually collected so far</li>
+<li><code>status: 'pending'</code> = not yet collected (e.g. cashier needs to confirm emergency cash)</li>
+<li><code>status: 'partial'</code> = some collected, balance outstanding</li>
+<li><code>status: 'paid'</code> = fully settled</li>
+<li>The distinction between "pending" and "partial" for emergency cash is subtle and should be well-documented</li>
+<h4>3. Discharge Billing</h4>
+<li>Discharge payments use IDs prefixed with <code>DISCH-</code> for identification</li>
+<li>When doctor discharges: existing pending payments are marked 'paid' (absorbed), a new DISCH- payment is created</li>
+<li><strong>Gap</strong>: If a patient has multiple pending payments (lab + pharmacy unpaid), all are absorbed. Consider whether this is the correct behavior</li>
+<h4>4. Discount Application</h4>
+<li>HR approval updates the DiscountRequest status but does <strong>not</strong> modify the payment amount in the database</li>
+<li>The Cashier sees the discount and must factor it in manually to the payment amount</li>
+<li><strong>Recommendation</strong>: When HR approves, automatically create a negative payment record or reduce the pending amount</li>
+<h4>5. Maternity vs General Ward Logic</h4>
+<li>Maternity Ward = admitted patients where <code>patientType === 'maternity'</code></li>
+<li>General Ward = all other admitted patients</li>
+<li>Ward name in the patient record may not contain "maternity" — typed by nurse — so the filter is by patientType, not ward name</li>
+<h4>6. Emergency Cash Confirmation Logic</h4>
+<li><code>emergencyCashConfirmed: false</code> = cash not yet confirmed by cashier</li>
+<li>Even with partial payment, <code>emergencyCashConfirmed</code> is set to <code>true</code> — meaning "cashier has acknowledged"</li>
+<li>The remaining balance goes to Outstanding Balances</li>
+<h4>7. Lab Direct vs Regular Lab</h4>
+<li><code>patientType: 'lab_direct'</code> = walk-in lab patient (no doctor consultation)</li>
+<li>Regular patients ordered to lab have <code>patientType: 'regular'</code> but <code>status: 'lab_processing'</code></li>
+<li>Lab interface handles both but with different status transitions</li>
+<h4>8. Missing Features (scope for future development)</h4>
+<li>Real-time notifications between departments (WebSocket implementation spec in IntranetSetupReport)</li>
+<li>DICOM/radiology integration</li>
+<li>Prescription printing</li>
+<li>Patient portal / appointment booking</li>
+<li>Biometric patient identification</li>
+<li>Insurance/HMO payment processing</li>
+<li>Automated medication interaction checking</li>
+<li>Bulk patient import</li>
+<h4>9. Performance Considerations</h4>
+<li>The <code>patients</code> array is passed to all components — with hundreds of patients this will cause unnecessary re-renders</li>
+<li><strong>Recommendation</strong>: Memoize filtered patient lists with useMemo, or migrate to server-side filtering</li>
+<h4>10. Data Integrity</h4>
+<li>Procurement total is not recalculated if items change after submission</li>
+<li>Patient ID format differs by type: <code>REG-${Date.now()}</code>, <code>EMG-${Date.now()}</code>, <code>MAT-${Date.now()}</code>, <code>LD-${Date.now()}</code></li>
+<li>No duplicate detection for patient registration</li>
+<h4>11. Eye Clinic Records</h4>
+<li>Eye clinic has its <strong>own separate localStorage key</strong> (<code>eye_clinic_records</code>) and its own EyeRecord type — separate from the main Patient system</li>
+<li>Charges are tracked locally in the eye clinic, not in the main payments array</li>
+<li><strong>Decision needed</strong>: Unify with main patient system or keep separate</li>
+<h4>12. Nursing Dispensing &amp; Injection Records</h4>
+<li>Also stored in their <strong>own localStorage keys</strong> — not linked to patient records</li>
+<li><strong>Decision needed</strong>: Link to patient admissionOrders for audit trail</li>
+<h4>13. Reset Demo Button</h4>
+<li>Available to all logged-in users — clears ALL localStorage and reloads</li>
+<li><strong>Production</strong>: Remove or restrict to admin role only</li>
+<h4>14. CONSULTATION_FEE constant</h4>
+<li>Hardcoded as <code>const CONSULTATION_FEE = 5000</code> in OPDInterface.tsx</li>
+<li>Should be moved to a config file or admin-settable value</li>
+<h4>15. Medication List</h4>
+<li>130+ medications hardcoded in DoctorInterface.tsx (sorted alphabetically)</li>
+</ul><li>Should be extracted to <code>data/medicationList.ts</code> and potentially made admin-editable</li>
+<footer>
+  ZMC Hospital Management EHR – Implementation Specification v1.0 · Generated June 2026 · Zikobyte · Confidential
+</footer>
+</body>
+</html>
