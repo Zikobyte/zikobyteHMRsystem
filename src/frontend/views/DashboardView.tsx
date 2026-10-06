@@ -21,7 +21,7 @@ import {
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { apiFetch } from '../utils/api';
-import ExportButton from '@/components/common/ExportButton';
+import ExportButton from "@/components/shared/ExportButton";
 import RevenueVerificationModal from "@/components/RevenueVerificationModal";
 
 interface DashboardViewProps {

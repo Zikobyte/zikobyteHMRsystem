@@ -19,7 +19,7 @@ import {
 import { useEffect, useMemo, useState } from "react";
 import { Patient, User } from "../types";
 import { apiFetch } from "../utils/api";
-import ExportButton from "./common/ExportButton";
+import ExportButton from "./shared/ExportButton";
 import PatientDetailModal from "./PatientDetailModal";
 
 interface DoctorSpecializedDirectoryProps {

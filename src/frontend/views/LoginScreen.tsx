@@ -508,110 +508,98 @@ export default function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
 								</h2>
 
 								{/* Department Quick Select Icons Row */}
-								{process.env.NODE_ENV === "development" ? (
-									<div className="flex items-center gap-2 mb-6 flex-wrap">
-										<button
-											type="button"
-											onClick={() =>
-												handleQuickLogin(
-													"dr_smith",
-													"password",
-													false,
-												)
-											}
-											className="bg-[#208368] hover:bg-[#186a54] text-white p-2.5 rounded-md flex items-center justify-center w-9 h-9 shadow-2xs transition-all cursor-pointer shrink-0 hover:scale-105"
-											title="Doctor Department Login (Dr. Smith)"
-										>
-											<Stethoscope className="h-4 w-4" />
-										</button>
+								{/* {process.env.NODE_ENV === "development" ? ( */}
+								<div className="flex items-center gap-2 mb-6 flex-wrap">
+									<button
+										type="button"
+										onClick={() =>
+											handleQuickLogin("dr_smith", "password", false)
+										}
+										className="bg-[#208368] hover:bg-[#186a54] text-white p-2.5 rounded-md flex items-center justify-center w-9 h-9 shadow-2xs transition-all cursor-pointer shrink-0 hover:scale-105"
+										title="Doctor Department Login (Dr. Smith)"
+									>
+										<Stethoscope className="h-4 w-4" />
+									</button>
 
-										<button
-											type="button"
-											onClick={() =>
-												handleQuickLogin(
-													"nurse_jane",
-													"password",
-													false,
-												)
-											}
-											className="bg-[#3B82F6] hover:bg-[#2563EB] text-white p-2.5 rounded-md flex items-center justify-center w-9 h-9 shadow-2xs transition-all cursor-pointer shrink-0 hover:scale-105"
-											title="Nursing Department Login (Nurse Jane)"
-										>
-											<HeartPulse className="h-4 w-4" />
-										</button>
+									<button
+										type="button"
+										onClick={() =>
+											handleQuickLogin(
+												"nurse_jane",
+												"password",
+												false,
+											)
+										}
+										className="bg-[#3B82F6] hover:bg-[#2563EB] text-white p-2.5 rounded-md flex items-center justify-center w-9 h-9 shadow-2xs transition-all cursor-pointer shrink-0 hover:scale-105"
+										title="Nursing Department Login (Nurse Jane)"
+									>
+										<HeartPulse className="h-4 w-4" />
+									</button>
 
-										<button
-											type="button"
-											onClick={() =>
-												handleQuickLogin(
-													"opd_registrar",
-													"password",
-													false,
-												)
-											}
-											className="bg-[#8B5CF6] hover:bg-[#7C3AED] text-white p-2.5 rounded-md flex items-center justify-center w-9 h-9 shadow-2xs transition-all cursor-pointer shrink-0 hover:scale-105"
-											title="OPD / Front Desk Login (Registrar)"
-										>
-											<ClipboardList className="h-4 w-4" />
-										</button>
+									<button
+										type="button"
+										onClick={() =>
+											handleQuickLogin(
+												"opd_registrar",
+												"password",
+												false,
+											)
+										}
+										className="bg-[#8B5CF6] hover:bg-[#7C3AED] text-white p-2.5 rounded-md flex items-center justify-center w-9 h-9 shadow-2xs transition-all cursor-pointer shrink-0 hover:scale-105"
+										title="OPD / Front Desk Login (Registrar)"
+									>
+										<ClipboardList className="h-4 w-4" />
+									</button>
 
-										<button
-											type="button"
-											onClick={() =>
-												handleQuickLogin(
-													"cashier1",
-													"password",
-													false,
-												)
-											}
-											className="bg-[#F59E0B] hover:bg-[#D97706] text-white p-2.5 rounded-md flex items-center justify-center w-9 h-9 shadow-2xs transition-all cursor-pointer shrink-0 hover:scale-105"
-											title="Cashier / Billing Login (Cashier 1)"
-										>
-											<CreditCard className="h-4 w-4" />
-										</button>
+									<button
+										type="button"
+										onClick={() =>
+											handleQuickLogin("cashier1", "password", false)
+										}
+										className="bg-[#F59E0B] hover:bg-[#D97706] text-white p-2.5 rounded-md flex items-center justify-center w-9 h-9 shadow-2xs transition-all cursor-pointer shrink-0 hover:scale-105"
+										title="Cashier / Billing Login (Cashier 1)"
+									>
+										<CreditCard className="h-4 w-4" />
+									</button>
 
-										<button
-											type="button"
-											onClick={() =>
-												handleQuickLogin(
-													"pharmacist",
-													"password",
-													false,
-												)
-											}
-											className="bg-[#EC4899] hover:bg-[#DB2777] text-white p-2.5 rounded-md flex items-center justify-center w-9 h-9 shadow-2xs transition-all cursor-pointer shrink-0 hover:scale-105"
-											title="Pharmacy Department Login (Pharmacist Mary)"
-										>
-											<Pill className="h-4 w-4" />
-										</button>
+									<button
+										type="button"
+										onClick={() =>
+											handleQuickLogin(
+												"pharmacist",
+												"password",
+												false,
+											)
+										}
+										className="bg-[#EC4899] hover:bg-[#DB2777] text-white p-2.5 rounded-md flex items-center justify-center w-9 h-9 shadow-2xs transition-all cursor-pointer shrink-0 hover:scale-105"
+										title="Pharmacy Department Login (Pharmacist Mary)"
+									>
+										<Pill className="h-4 w-4" />
+									</button>
 
-										<button
-											type="button"
-											onClick={() =>
-												handleQuickLogin(
-													"lab_tech",
-													"password",
-													false,
-												)
-											}
-											className="bg-[#06B6D4] hover:bg-[#0891B2] text-white p-2.5 rounded-md flex items-center justify-center w-9 h-9 shadow-2xs transition-all cursor-pointer shrink-0 hover:scale-105"
-											title="Laboratory Department Login (Lab Scientist)"
-										>
-											<Activity className="h-4 w-4" />
-										</button>
+									<button
+										type="button"
+										onClick={() =>
+											handleQuickLogin("lab_tech", "password", false)
+										}
+										className="bg-[#06B6D4] hover:bg-[#0891B2] text-white p-2.5 rounded-md flex items-center justify-center w-9 h-9 shadow-2xs transition-all cursor-pointer shrink-0 hover:scale-105"
+										title="Laboratory Department Login (Lab Scientist)"
+									>
+										<Activity className="h-4 w-4" />
+									</button>
 
-										<button
-											type="button"
-											onClick={() =>
-												handleQuickLogin("admin", "password", false)
-											}
-											className="bg-[#334155] hover:bg-[#1E293B] text-white p-2.5 rounded-md flex items-center justify-center w-9 h-9 shadow-2xs transition-all cursor-pointer shrink-0 hover:scale-105"
-											title="Account Officer Department Login"
-										>
-											<ShieldCheck className="h-4 w-4" />
-										</button>
-									</div>
-								) : null}
+									<button
+										type="button"
+										onClick={() =>
+											handleQuickLogin("admin", "password", false)
+										}
+										className="bg-[#334155] hover:bg-[#1E293B] text-white p-2.5 rounded-md flex items-center justify-center w-9 h-9 shadow-2xs transition-all cursor-pointer shrink-0 hover:scale-105"
+										title="Account Officer Department Login"
+									>
+										<ShieldCheck className="h-4 w-4" />
+									</button>
+								</div>
+								{/* ) : null} */}
 
 								{/* Divider Line */}
 								<div className="relative flex py-5 items-center mb-6">

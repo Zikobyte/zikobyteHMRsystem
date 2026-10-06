@@ -24,7 +24,7 @@ function stubBrowserGlobals(): void {
 describe('frontend catalogue parity with canonical lab catalogue', () => {
   test('every DoctorView test code exists in the canonical table at an equal displayed price', async () => {
     stubBrowserGlobals();
-    const doctor = await import('../../src/components/DoctorView');
+    const doctor = await import('@/views/DoctorView');
     const groups = [
       doctor.CHEMISTRY_TESTS,
       doctor.SEROLOGY_TESTS,
@@ -46,7 +46,7 @@ describe('frontend catalogue parity with canonical lab catalogue', () => {
 
   test('every walk-in catalogue id resolves to an equal canonical price', async () => {
     stubBrowserGlobals();
-    const lab = await import('../../src/components/LaboratoryView');
+    const lab = await import('@/views/LaboratoryView');
     const catalog = lab.WALK_IN_LAB_CATALOG as {
       category: string;
       tests: { id: string; name: string; price: number }[];

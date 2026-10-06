@@ -20,7 +20,7 @@ import {
 } from "lucide-react";
 import { motion, AnimatePresence } from 'motion/react';
 import { apiFetch } from '../utils/api';
-import ExportButton from "./common/ExportButton";
+import ExportButton from "./shared/ExportButton";
 
 interface RevenueVerificationModalProps {
   isOpen: boolean;

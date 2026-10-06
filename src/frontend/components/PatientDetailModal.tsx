@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { API_BASE, apiFetch, getAuthToken } from '../utils/api';
 import { Patient, Vitals, MaternityDetails, EmergencyDetails } from '../types';
-import ExportButton from "./common/ExportButton";
+import ExportButton from "./shared/ExportButton";
 import {
 	X,
 	User,
