@@ -16,11 +16,11 @@ import { SessionProvider } from "@/lib/routing/session";
 const DashboardView = lazy(() => import("@/views/DashboardView"));
 const OPDRegistrationView = lazy(() => import("@/views/opd/OPDRegistrationView"));
 const EyeClinicView = lazy(() => import("@/views/EyeClinicView"));
-const DoctorView = lazy(() => import("@/views/DoctorView"));
+const DoctorView = lazy(() => import("@/views/doctor/DoctorView"));
 const UserManagementView = lazy(
 	() => import("@/views/it_admin/UserManagementView"),
 );
-const CashierView = lazy(() => import("@/views/CashierView"));
+const CashierView = lazy(() => import("@/views/cashier/CashierView"));
 const LaboratoryView = lazy(() => import("@/views/LaboratoryView"));
 const PharmacyView = lazy(() => import("@/views/PharmacyView"));
 const HRDashboardView = lazy(() => import("@/views/HRDashboardView"));
