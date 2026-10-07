@@ -3,26 +3,31 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { Suspense, useState } from "react";
+import React, { Suspense, lazy, useState } from "react";
 import type { User } from "@/types";
 import DashboardLayout from "@/components/layouts/DashboardLayout";
-import DashboardView from "@/views/DashboardView";
-import OPDRegistrationView from "@/views/OPDRegistrationView";
-import EyeClinicView from "@/views/EyeClinicView";
-import DoctorView from "@/views/DoctorView";
-import UserManagementView from "@/views/it_admin/UserManagementView";
-import CashierView from "@/views/CashierView";
-import LaboratoryView from "@/views/LaboratoryView";
-import PharmacyView from "@/views/PharmacyView";
-import HRDashboardView from "@/views/HRDashboardView";
-import NursingView from "@/views/NursingView";
 import NotificationCenter from "@/components/shared/NotificationCenter";
-import PatientDirectoryImportView from "@/views/PatientDirectoryImportView";
 import LoginScreen from "@/views/LoginScreen";
 import { getAuthToken } from "@/utils/api";
 import { useSession } from "@/lib/routing/session";
 import { doctorSubTab, resolveViewPlan } from "@/lib/routing/view-plan";
 import { SessionProvider } from "@/lib/routing/session";
+
+const DashboardView = lazy(() => import("@/views/DashboardView"));
+const OPDRegistrationView = lazy(() => import("@/views/opd/OPDRegistrationView"));
+const EyeClinicView = lazy(() => import("@/views/eye/EyeClinicView"));
+const DoctorView = lazy(() => import("@/views/doctor/DoctorView"));
+const UserManagementView = lazy(
+	() => import("@/views/it_admin/UserManagementView"),
+);
+const CashierView = lazy(() => import("@/views/cashier/CashierView"));
+const LaboratoryView = lazy(() => import("@/views/LaboratoryView"));
+const PharmacyView = lazy(() => import("@/views/PharmacyView"));
+const HRDashboardView = lazy(() => import("@/views/HRDashboardView"));
+const NursingView = lazy(() => import("@/views/nursing/NursingView"));
+const PatientDirectoryImportView = lazy(
+	() => import("@/views/PatientDirectoryImportView"),
+);
 
 export default function App() {
 	return (
