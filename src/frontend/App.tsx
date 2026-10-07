@@ -15,7 +15,7 @@ import { SessionProvider } from "@/lib/routing/session";
 
 const DashboardView = lazy(() => import("@/views/DashboardView"));
 const OPDRegistrationView = lazy(() => import("@/views/opd/OPDRegistrationView"));
-const EyeClinicView = lazy(() => import("@/views/EyeClinicView"));
+const EyeClinicView = lazy(() => import("@/views/eye/EyeClinicView"));
 const DoctorView = lazy(() => import("@/views/doctor/DoctorView"));
 const UserManagementView = lazy(
 	() => import("@/views/it_admin/UserManagementView"),
