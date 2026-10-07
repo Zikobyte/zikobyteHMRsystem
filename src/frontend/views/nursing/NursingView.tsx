@@ -9,10 +9,10 @@ import {
     Syringe
 } from 'lucide-react';
 
-const AdmittedPatientsView = lazy(() => import('@/views/nursing/AdmittedPatientsView'));
-const DetainedPatientsView = lazy(() => import('@/views/nursing/DetainedPatientsView'));
-const InjectionRecordsView = lazy(() => import('@/views/nursing/InjectionRecordsView'));
-const NurseDispensingView = lazy(() => import('@/views/nursing/NurseDispensingView'));
+const AdmittedPatientsView = lazy(() => import('@/views/nursing/_tabs/AdmittedPatientsView'));
+const DetainedPatientsView = lazy(() => import('@/views/nursing/_tabs/DetainedPatientsView'));
+const InjectionRecordsView = lazy(() => import('@/views/nursing/_tabs/InjectionRecordsView'));
+const NurseDispensingView = lazy(() => import('@/views/nursing/_tabs/NurseDispensingView'));
 
 export type NursingSubTab = 'admitted-patients' | 'detained-patients' | 'nurse-dispensing' | 'injection-records';
 

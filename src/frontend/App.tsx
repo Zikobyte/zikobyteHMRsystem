@@ -24,7 +24,7 @@ const CashierView = lazy(() => import("@/views/cashier/CashierView"));
 const LaboratoryView = lazy(() => import("@/views/LaboratoryView"));
 const PharmacyView = lazy(() => import("@/views/PharmacyView"));
 const HRDashboardView = lazy(() => import("@/views/HRDashboardView"));
-const NursingView = lazy(() => import("@/views/NursingView"));
+const NursingView = lazy(() => import("@/views/nursing/NursingView"));
 const PatientDirectoryImportView = lazy(
 	() => import("@/views/PatientDirectoryImportView"),
 );
