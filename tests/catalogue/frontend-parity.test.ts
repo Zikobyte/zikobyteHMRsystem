@@ -46,7 +46,7 @@ describe('frontend catalogue parity with canonical lab catalogue', () => {
 
   test('every walk-in catalogue id resolves to an equal canonical price', async () => {
     stubBrowserGlobals();
-    const lab = await import('@/views/LaboratoryView');
+    const lab = await import('@/views/lab/_utils/lab-catalog');
     const catalog = lab.WALK_IN_LAB_CATALOG as {
       category: string;
       tests: { id: string; name: string; price: number }[];

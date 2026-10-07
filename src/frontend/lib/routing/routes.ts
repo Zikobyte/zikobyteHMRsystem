@@ -39,8 +39,8 @@ const OPDRegistrationView = lazyView(() => import('@/views/opd/OPDRegistrationVi
 const NursingView = lazyView(() => import('@/views/nursing/NursingView'));
 const EyeClinicView = lazyView(() => import('@/views/eye/EyeClinicView'));
 const DoctorView = lazyView(() => import('@/views/doctor/DoctorView'));
-const LaboratoryView = lazyView(() => import('@/views/LaboratoryView'));
-const PharmacyView = lazyView(() => import('@/views/PharmacyView'));
+const LaboratoryView = lazyView(() => import('@/views/lab/LaboratoryView'));
+const PharmacyView = lazyView(() => import('@/views/pharmacy/PharmacyView'));
 const HRDashboardView = lazyView(() => import('@/views/hr/HRDashboardView'));
 const UserManagementView = lazyView(() => import('@/views/it_admin/UserManagementView'));
 const CashierView = lazyView(() => import('@/views/cashier/CashierView'));

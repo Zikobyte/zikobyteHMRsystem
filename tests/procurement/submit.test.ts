@@ -1,10 +1,12 @@
 import { describe, test, expect } from 'bun:test';
 import { readFile } from 'node:fs/promises';
 
-const pharmacyViewUrl = new URL('@/views/PharmacyView.tsx', import.meta.url);
+const pharmacyHookUrl = new URL('../../src/frontend/views/pharmacy/_hooks/usePharmacyProcurement.ts', import.meta.url);
+const pharmacyTabUrl = new URL('../../src/frontend/views/pharmacy/_tabs/ProcurementTab.tsx', import.meta.url);
+const pharmacyUtilsUrl = new URL('../../src/frontend/views/pharmacy/_utils/pharmacy-procurement.ts', import.meta.url);
 
-async function readSource(): Promise<string> {
-  return await readFile(pharmacyViewUrl, 'utf8');
+async function readSource(url: URL): Promise<string> {
+  return await readFile(url, 'utf8');
 }
 
 function stubBrowserGlobals(): void {
@@ -30,8 +32,8 @@ function stubBrowserGlobals(): void {
 
 async function loadHelpers() {
   stubBrowserGlobals();
-  const mod = await import('@/views/PharmacyView');
-  return mod as typeof import('@/views/PharmacyView');
+  const mod = await import('@/views/pharmacy/_utils/pharmacy-procurement');
+  return mod as typeof import('@/views/pharmacy/_utils/pharmacy-procurement');
 }
 
 describe('pharmacy procurement submit (honest failure)', () => {
@@ -134,17 +136,19 @@ describe('pharmacy procurement submit (honest failure)', () => {
   });
 
   test('submit handler is honest: failure sets inline error without card or success', async () => {
-    const src = await readSource();
+    const hookSrc = await readSource(pharmacyHookUrl);
+    const tabSrc = await readSource(pharmacyTabUrl);
+    const utilSrc = await readSource(pharmacyUtilsUrl);
     // Per-item POST structure is preserved with the same endpoint.
-    expect(src.includes("Promise.allSettled(validItems.map(item => apiFetch('/hr/procurements'")).toBe(true);
-    expect(src.includes('buildProcurementPayload(item, requestedBy')).toBe(true);
-    expect(src.includes('partitionProcurementResults(validItems, results)')).toBe(true);
+    expect(hookSrc.includes("Promise.allSettled(validItems.map(item => apiFetch('/hr/procurements'")).toBe(true);
+    expect(hookSrc.includes('buildProcurementPayload(item, requestedBy')).toBe(true);
+    expect(hookSrc.includes('partitionProcurementResults(validItems, results)')).toBe(true);
     // Failure path surfaces an inline error and returns before the local card / success text.
-    const handlerStart = src.indexOf('const handleSubmitProcurement');
+    const handlerStart = hookSrc.indexOf('const handleSubmitProcurement');
     expect(handlerStart > -1).toBe(true);
-    const handlerEnd = src.indexOf('// Handler: Stock Log Submit', handlerStart);
+    const handlerEnd = hookSrc.indexOf('\n  };\n\n  return {', handlerStart);
     expect(handlerEnd > handlerStart).toBe(true);
-    const handler = src.slice(handlerStart, handlerEnd);
+    const handler = hookSrc.slice(handlerStart, handlerEnd);
     expect(handler.includes('setProcurementError')).toBe(true);
     expect(handler.includes('setProcurementError(errorMessage')).toBe(true);
     // The old catch-and-continue (console.error then unconditional card insert) is gone.
@@ -160,9 +164,9 @@ describe('pharmacy procurement submit (honest failure)', () => {
     // Payload contract unchanged.
     expect(handler.includes("apiFetch('/hr/procurements'")).toBe(true);
     expect(handler.includes("method: 'POST'")).toBe(true);
-    expect(src.includes('category:')).toBe(true);
+    expect(utilSrc.includes('category:')).toBe(true);
     // Inline error banner exists with dismiss affordance.
-    expect(src.includes('role="alert"')).toBe(true);
-    expect(src.includes('{procurementError && (')).toBe(true);
+    expect(tabSrc.includes('role="alert"')).toBe(true);
+    expect(tabSrc.includes('{procurementError && (')).toBe(true);
   });
 });
