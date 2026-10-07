@@ -1,4 +1,4 @@
-import PatientDetailModal from '@/components/PatientDetailModal';
+import PatientDetailModal from '@/components/patient-detail/PatientDetailModal';
 import { Patient, User } from '@/types';
 import {
     Activity,
