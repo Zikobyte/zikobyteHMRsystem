@@ -12,6 +12,7 @@
  */
 
 import { useEffect, useState } from 'react';
+import { apiFetch } from '@/utils/api';
 
 export interface PendingPatient {
   id: string;
@@ -126,27 +127,14 @@ export function useDetainedPatients(): UseDetainedPatientsResult {
     type: 'info'
   });
 
-  const getAuthHeaders = () => {
-    const token = localStorage.getItem('zmc_token') || localStorage.getItem('token') || localStorage.getItem('zmc_auth_token');
-    return {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {})
-    };
-  };
-
   const fetchDetainedData = async () => {
     try {
       setIsLoading(true);
-      const res = await fetch(`/api/nursing/detained?search=${encodeURIComponent(searchQuery)}`, {
-        headers: getAuthHeaders()
-      });
-      if (res.ok) {
-        const data = await res.json();
-        if (data.success) {
-          setPendingPatients(data.pendingAdmissions || []);
-          setDetainedPatients(data.currentlyDetained || []);
-          setTotalDetainedCount(data.totalDetained ?? (data.currentlyDetained || []).length);
-        }
+      const data = await apiFetch(`/nursing/detained?search=${encodeURIComponent(searchQuery)}`);
+      if (data.success) {
+        setPendingPatients(data.pendingAdmissions || []);
+        setDetainedPatients(data.currentlyDetained || []);
+        setTotalDetainedCount(data.totalDetained ?? (data.currentlyDetained || []).length);
       }
     } catch (err) {
       console.error('Failed to fetch detained patients:', err);
@@ -181,9 +169,8 @@ export function useDetainedPatients(): UseDetainedPatientsResult {
 
     try {
       setIsSubmittingDetention(true);
-      const res = await fetch('/api/nursing/detained/detain', {
+      const data = await apiFetch('/nursing/detained/detain', {
         method: 'POST',
-        headers: getAuthHeaders(),
         body: JSON.stringify({
           patientId: selectedForDetention.id || selectedForDetention.hospital_number,
           reason: detentionReason.trim(),
@@ -192,8 +179,7 @@ export function useDetainedPatients(): UseDetainedPatientsResult {
         })
       });
 
-      const data = await res.json();
-      if (res.ok && data.success) {
+      if (data.success) {
         // Success dialog with exact message requested
         setConfirmationDialog({
           isOpen: true,
@@ -211,7 +197,7 @@ export function useDetainedPatients(): UseDetainedPatientsResult {
       }
     } catch (err: any) {
       console.error('Error detaining patient:', err);
-      alert('Network error while detaining patient');
+      alert(err?.message || 'Network error while detaining patient');
     } finally {
       setIsSubmittingDetention(false);
     }
@@ -224,12 +210,10 @@ export function useDetainedPatients(): UseDetainedPatientsResult {
     }
 
     try {
-      const res = await fetch(`/api/nursing/detained/${encodeURIComponent(patient.id)}/release`, {
-        method: 'POST',
-        headers: getAuthHeaders()
+      const data = await apiFetch(`/nursing/detained/${encodeURIComponent(patient.id)}/release`, {
+        method: 'POST'
       });
-      const data = await res.json();
-      if (res.ok && data.success) {
+      if (data.success) {
         setConfirmationDialog({
           isOpen: true,
           title: 'Patient Released from Observation',
@@ -242,7 +226,7 @@ export function useDetainedPatients(): UseDetainedPatientsResult {
       }
     } catch (err: any) {
       console.error('Error releasing patient:', err);
-      alert('Network error while releasing patient');
+      alert(err?.message || 'Network error while releasing patient');
     }
   };
 
@@ -271,9 +255,8 @@ export function useDetainedPatients(): UseDetainedPatientsResult {
 
     try {
       setIsSubmittingAdmission(true);
-      const res = await fetch(`/api/nursing/detained/${encodeURIComponent(selectedForAdmission.id)}/admit`, {
+      const data = await apiFetch(`/nursing/detained/${encodeURIComponent(selectedForAdmission.id)}/admit`, {
         method: 'POST',
-        headers: getAuthHeaders(),
         body: JSON.stringify({
           ward: admissionForm.ward,
           bedNumber: admissionForm.bedNumber.trim(),
@@ -286,8 +269,7 @@ export function useDetainedPatients(): UseDetainedPatientsResult {
         })
       });
 
-      const data = await res.json();
-      if (res.ok && data.success) {
+      if (data.success) {
         // Confirmation dialogue:
         // "Once you click on complete admission, it will say patient has been admitted to private room bed 847 or whatever information that was filled in on the form."
         setConfirmationDialog({
@@ -304,7 +286,7 @@ export function useDetainedPatients(): UseDetainedPatientsResult {
       }
     } catch (err: any) {
       console.error('Error admitting patient:', err);
-      alert('Network error while completing admission');
+      alert(err?.message || 'Network error while completing admission');
     } finally {
       setIsSubmittingAdmission(false);
     }

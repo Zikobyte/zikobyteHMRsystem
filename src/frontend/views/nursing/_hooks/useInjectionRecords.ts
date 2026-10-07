@@ -18,6 +18,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type React from 'react';
+import { apiFetch } from '@/utils/api';
 
 export interface InjectionRecord {
   id: string;
@@ -155,24 +156,12 @@ export function useInjectionRecords(): UseInjectionRecordsResult {
     message: ''
   });
 
-  const getAuthHeaders = () => {
-    const token = localStorage.getItem('zmc_token') || localStorage.getItem('token') || localStorage.getItem('zmc_auth_token');
-    return {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {})
-    };
-  };
-
   // Fetch initial injection records & suggestions
   const fetchInjectionData = async () => {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch('/api/nursing/injections', {
-        headers: getAuthHeaders()
-      });
-      if (!res.ok) throw new Error(`HTTP error ${res.status}`);
-      const data = await res.json();
+      const data = await apiFetch('/nursing/injections');
       if (data.success) {
         setRecords(data.records || []);
         if (data.commonInjections) {
@@ -192,34 +181,28 @@ export function useInjectionRecords(): UseInjectionRecordsResult {
     setLoadingPatients(true);
     try {
       const url = query
-        ? `/api/nursing/patient-cards?search=${encodeURIComponent(query)}`
-        : '/api/nursing/patient-cards';
-      const res = await fetch(url, {
-        headers: getAuthHeaders()
-      });
-      if (res.ok) {
-        const data = await res.json();
+        ? `/nursing/patient-cards?search=${encodeURIComponent(query)}`
+        : '/nursing/patient-cards';
+      try {
+        const data = await apiFetch(url);
         if (data.success && Array.isArray(data.patients)) {
           setRegisteredPatients(data.patients);
           return;
         }
+      } catch (err) {
+        // Fall through to /patients fallback below
       }
 
-      // Fallback to /api/patients if needed
-      const fallbackRes = await fetch('/api/patients', {
-        headers: getAuthHeaders()
-      });
-      if (fallbackRes.ok) {
-        const fbData = await fallbackRes.json();
-        const pts: RegisteredPatientCard[] = (fbData.patients || fbData || []).map((p: any) => ({
-          name: `${p.first_name || ''} ${p.last_name || ''}`.trim() || p.name || 'Patient',
-          hospital_number: p.hospital_number || p.patient_id || p.card_number || p.id || '',
-          phone_number: p.phone_number || p.phone || '',
-          category: p.card_type || p.category || 'Outpatient',
-          gender: p.gender || ''
-        }));
-        setRegisteredPatients(pts);
-      }
+      // Fallback to /patients if needed
+      const fbData = await apiFetch('/patients');
+      const pts: RegisteredPatientCard[] = (fbData.patients || fbData || []).map((p: any) => ({
+        name: `${p.first_name || ''} ${p.last_name || ''}`.trim() || p.name || 'Patient',
+        hospital_number: p.hospital_number || p.patient_id || p.card_number || p.id || '',
+        phone_number: p.phone_number || p.phone || '',
+        category: p.card_type || p.category || 'Outpatient',
+        gender: p.gender || ''
+      }));
+      setRegisteredPatients(pts);
     } catch (err) {
       console.warn('Could not load patient cards from database:', err);
     } finally {
@@ -317,14 +300,12 @@ export function useInjectionRecords(): UseInjectionRecordsResult {
         nurseSign: nurseSign.trim() || 'nurse1'
       };
 
-      const res = await fetch('/api/nursing/injections', {
+      const data = await apiFetch('/nursing/injections', {
         method: 'POST',
-        headers: getAuthHeaders(),
         body: JSON.stringify(payload)
       });
 
-      const data = await res.json();
-      if (!res.ok || !data.success) {
+      if (!data.success) {
         throw new Error(data.error || 'Failed to save injection record');
       }
 
@@ -363,11 +344,9 @@ export function useInjectionRecords(): UseInjectionRecordsResult {
   // Toggle review/verify status
   const handleToggleReview = async (recordId: string) => {
     try {
-      const res = await fetch(`/api/nursing/injections/${recordId}/toggle-review`, {
-        method: 'PATCH',
-        headers: getAuthHeaders()
+      const data = await apiFetch(`/nursing/injections/${recordId}/toggle-review`, {
+        method: 'PATCH'
       });
-      const data = await res.json();
       if (data.success && data.record) {
         setRecords(prev => prev.map(r => r.id === recordId ? data.record : r));
       }
@@ -382,11 +361,9 @@ export function useInjectionRecords(): UseInjectionRecordsResult {
       return;
     }
     try {
-      const res = await fetch(`/api/nursing/injections/${recordId}`, {
-        method: 'DELETE',
-        headers: getAuthHeaders()
+      const data = await apiFetch(`/nursing/injections/${recordId}`, {
+        method: 'DELETE'
       });
-      const data = await res.json();
       if (data.success) {
         setRecords(prev => prev.filter(r => r.id !== recordId));
       }
