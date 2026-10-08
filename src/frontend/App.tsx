@@ -13,7 +13,7 @@ import { useSession } from "@/lib/routing/session";
 import { doctorSubTab, resolveViewPlan } from "@/lib/routing/view-plan";
 import { SessionProvider } from "@/lib/routing/session";
 
-const DashboardView = lazy(() => import("@/views/DashboardView"));
+const DashboardOverview = lazy(() => import("@/views/DashboardOverview"));
 const OPDRegistrationView = lazy(() => import("@/views/opd/OPDRegistrationView"));
 const EyeClinicView = lazy(() => import("@/views/eye/EyeClinicView"));
 const DoctorView = lazy(() => import("@/views/doctor/DoctorView"));
@@ -85,7 +85,7 @@ function AppShell(): React.JSX.Element {
 			>
 				<Suspense fallback={<DeskFallback />}>
 					{plan?.kind === "dashboard" && (
-						<DashboardView
+						<DashboardOverview
 							user={user}
 							onNavigateToPatients={() => {
 								navigate(

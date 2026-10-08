@@ -3,7 +3,7 @@ import PatientDetailModal from "@/components/patient-detail/PatientDetailModal";
 import { Patient } from "@/types";
 import { apiFetch } from "@/utils/api";
 import React, { useEffect, useState } from "react";
-import ReturningPatientView from "../ReturningPatientView";
+import ReturningPatientView from "./_components/ReturningPatientView";
 import OpdAlerts from "./_components/OpdAlerts";
 import OpdHeader from "./_components/OpdHeader";
 import { useOpdCatalog } from "./_hooks/useOpdCatalog";

@@ -34,7 +34,7 @@ export interface RouteMatch {
 const lazyView = (importer: () => Promise<{ default: ComponentType<any> }>) =>
   React.lazy(importer);
 
-const DashboardView = lazyView(() => import('@/views/DashboardView'));
+const DashboardOverview = lazyView(() => import('@/views/DashboardOverview'));
 const OPDRegistrationView = lazyView(() => import('@/views/opd/OPDRegistrationView'));
 const NursingView = lazyView(() => import('@/views/nursing/NursingView'));
 const EyeClinicView = lazyView(() => import('@/views/eye/EyeClinicView'));
@@ -54,10 +54,10 @@ export const ROUTE_ENTRIES: RouteEntry[] = [
 		path: '/dashboard',
 		aliases: ['/', '/overview'],
 		departments: ['opd', 'nurse', 'eye', 'hr', 'it', 'all'],
-		component: DashboardView,
+		component: DashboardOverview,
 		fallbackTab: 'dashboard'
 	},
-  { tab: 'overview', path: '/overview', departments: ['finance', 'all'], component: DashboardView, fallbackTab: 'dashboard' },
+  { tab: 'overview', path: '/overview', departments: ['finance', 'all'], component: DashboardOverview, fallbackTab: 'dashboard' },
   { tab: 'hr-dashboard', path: '/hr/dashboard', aliases: ['/hr'], departments: ['hr', 'all'], component: HRDashboardView, fallbackTab: 'dashboard' },
   { tab: 'hr-employees', path: '/hr/employees', aliases: ['/employees'], departments: ['hr', 'all'], component: HRDashboardView, fallbackTab: 'hr-dashboard' },
   { tab: 'hr-absences', path: '/hr/absences', aliases: ['/absences'], departments: ['hr', 'all'], component: HRDashboardView, fallbackTab: 'hr-dashboard' },
