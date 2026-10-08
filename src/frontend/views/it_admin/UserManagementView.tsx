@@ -12,15 +12,14 @@
  * useMaintenanceOps), tab JSX in _tabs/, modals in _modals/, shared
  * chrome in _components/, types in _utils/.
  * Lazy entry unchanged: App.tsx + lib/routing/routes.ts import
- * '@/views/it_admin/UserManagementView' (ORCHESTRATOR rewires — do not
- * touch). The ../PatientDirectoryImportView delegate import stays valid
- * (same directory depth as before).
+ * '@/views/it_admin/UserManagementView'. The PatientDirectoryImportView
+ * delegate now lives alongside in views/it_admin/.
  */
 
 import { useEffect, useState } from 'react';
 import { Activity, Settings, Shield, Upload, Users } from 'lucide-react';
 import type { User } from '@/types';
-import PatientDirectoryImportView from '../PatientDirectoryImportView';
+import PatientDirectoryImportView from './PatientDirectoryImportView';
 import ItAdminAlerts from './_components/ItAdminAlerts';
 import { useAuditLog } from './_hooks/useAuditLog';
 import { useItUsers } from './_hooks/useItUsers';

@@ -13,7 +13,7 @@ import { useSession } from "@/lib/routing/session";
 import { doctorSubTab, resolveViewPlan } from "@/lib/routing/view-plan";
 import { SessionProvider } from "@/lib/routing/session";
 
-const DashboardOverview = lazy(() => import("@/views/DashboardOverview"));
+const DashboardOverview = lazy(() => import("@/views/dashboard/DashboardOverview"));
 const OPDRegistrationView = lazy(() => import("@/views/opd/OPDRegistrationView"));
 const EyeClinicView = lazy(() => import("@/views/eye/EyeClinicView"));
 const DoctorView = lazy(() => import("@/views/doctor/DoctorView"));
@@ -26,7 +26,7 @@ const PharmacyView = lazy(() => import("@/views/pharmacy/PharmacyView"));
 const HRDashboardView = lazy(() => import("@/views/hr/HRDashboardView"));
 const NursingView = lazy(() => import("@/views/nursing/NursingView"));
 const PatientDirectoryImportView = lazy(
-	() => import("@/views/PatientDirectoryImportView"),
+	() => import("@/views/it_admin/PatientDirectoryImportView"),
 );
 
 export default function App() {

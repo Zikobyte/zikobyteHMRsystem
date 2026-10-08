@@ -1,5 +1,17 @@
-import { PatientsRepository } from './patients.repository';
+import { PatientsRepository, QueryExecutor } from './patients.repository';
 import { CARD_FEES, EMERGENCY_FEE_SCHEDULE, PATIENT_MESSAGES } from './patients.constants';
+import { validateCreatePatientPayload } from './patients.validator';
+import { getPostgresPool, getPostgresStatus, query } from '../../database/db.repo';
+
+export interface BulkRowFailure {
+  index: number;
+  error: string;
+}
+
+export interface BulkRegisterResult {
+  created: any[];
+  failed: BulkRowFailure[];
+}
 
 export class PatientsService {
   private repo = new PatientsRepository();
@@ -16,10 +28,15 @@ export class PatientsService {
     return patient;
   }
 
-  public async registerPatient(patientData: any, registrarUsername: string): Promise<any> {
+  public async registerPatient(
+    patientData: any,
+    registrarUsername: string,
+    executor: QueryExecutor = query,
+    opts?: { silent?: boolean }
+  ): Promise<any> {
     // 1. Check duplicate patient to prevent double registration
     if (patientData.name && patientData.name.trim() !== 'Unidentified Emergency Patient') {
-      const duplicates = await this.repo.checkDuplicates(patientData.name, patientData.phoneNumber || '');
+      const duplicates = await this.repo.checkDuplicates(patientData.name, patientData.phoneNumber || '', executor);
       if (duplicates && duplicates.length > 0) {
         const existing = duplicates[0];
         throw new Error(`Registration Blocked: Patient record already exists for "${existing.name}" (Hospital Number: ${existing.hospital_number}). Duplicate registration is not permitted. Please use their existing file.`);
@@ -54,7 +71,116 @@ export class PatientsService {
       registeredBy: patientData.registeredBy || registrarUsername,
     };
 
-    return this.repo.create(patientToSave);
+    return this.repo.create(patientToSave, executor, opts);
+  }
+
+  // Transactional bulk import for the IT-admin patient-directory import flow.
+  // Reuses the EXISTING single-patient path per row: the same pure validator
+  // (validateCreatePatientPayload) and the same registerPatient() creation
+  // (server-authoritative cardFee — a client-supplied cardFee is overwritten
+  // there and never trusted).
+  //
+  // Consistency choice (documented): PARTIAL COMMIT. Valid rows are committed
+  // and invalid rows are reported in `failed` so the frontend can show per-row
+  // errors and the operator can fix-and-retry only those rows. A single bad
+  // row must not discard hundreds of good registrations. Only TOTAL failure
+  // (zero rows creatable) rolls everything back and throws.
+  //
+  // Implementation: one pg client + BEGIN/COMMIT/ROLLBACK around the batch
+  // (same convention as payments withBillingTransaction). Each row runs under
+  // its own SAVEPOINT because a failed statement would otherwise poison the
+  // whole Postgres transaction; a row error does ROLLBACK TO SAVEPOINT and is
+  // recorded in `failed` while the batch continues. No WS broadcasts happen
+  // inside the transaction (silent mode) — the controller emits one summary
+  // broadcast after commit so a ROLLBACK never emits phantom notifications.
+  public async bulkRegisterPatients(rows: any[], registrarUsername: string): Promise<BulkRegisterResult> {
+    const failed: BulkRowFailure[] = [];
+    const valid: Array<{ index: number; row: any }> = [];
+
+    rows.forEach((row, index) => {
+      if (!row || typeof row !== 'object') {
+        failed.push({ index, error: 'Row must be a create-patient object.' });
+        return;
+      }
+      const validationError = validateCreatePatientPayload(row);
+      if (validationError) {
+        failed.push({ index, error: validationError });
+      } else {
+        valid.push({ index, row });
+      }
+    });
+
+    if (valid.length === 0) {
+      throw new Error(
+        `Bulk import failed: all ${rows.length} row(s) rejected. ` +
+        failed.slice(0, 5).map((f) => `Row ${f.index}: ${f.error}`).join(' ')
+      );
+    }
+
+    const created: any[] = [];
+    const pool = getPostgresPool();
+    const { isPostgresActive } = getPostgresStatus();
+
+    if (!pool || !isPostgresActive) {
+      // No live pg pool (query() would throw) — sequential best-effort path.
+      for (const { index, row } of valid) {
+        try {
+          created.push(await this.registerPatient(row, registrarUsername));
+        } catch (err: any) {
+          failed.push({ index, error: err?.message || 'Row creation failed.' });
+        }
+      }
+      failed.sort((a, b) => a.index - b.index);
+      if (created.length === 0) {
+        throw new Error(
+          `Bulk import failed: all ${rows.length} row(s) rejected. ` +
+          failed.slice(0, 5).map((f) => `Row ${f.index}: ${f.error}`).join(' ')
+        );
+      }
+      return { created, failed };
+    }
+
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const txQuery: QueryExecutor = (text, params) => client.query(text, params);
+
+      let savepointSeq = 0;
+      for (const { index, row } of valid) {
+        const savepoint = `bulk_row_sp_${savepointSeq++}`;
+        await client.query(`SAVEPOINT ${savepoint}`);
+        try {
+          const patient = await this.registerPatient(row, registrarUsername, txQuery, { silent: true });
+          created.push(patient);
+          await client.query(`RELEASE SAVEPOINT ${savepoint}`);
+        } catch (err: any) {
+          await client.query(`ROLLBACK TO SAVEPOINT ${savepoint}`);
+          failed.push({ index, error: err?.message || 'Row creation failed.' });
+        }
+      }
+
+      failed.sort((a, b) => a.index - b.index);
+
+      if (created.length === 0) {
+        await client.query('ROLLBACK');
+        throw new Error(
+          `Bulk import failed: all ${rows.length} row(s) rejected. ` +
+          failed.slice(0, 5).map((f) => `Row ${f.index}: ${f.error}`).join(' ')
+        );
+      }
+
+      await client.query('COMMIT');
+      return { created, failed };
+    } catch (err) {
+      try {
+        await client.query('ROLLBACK');
+      } catch {
+        // Ignore rollback errors — the original error takes precedence.
+      }
+      throw err;
+    } finally {
+      client.release();
+    }
   }
 
   public async updatePatient(id: string, updates: any): Promise<any> {

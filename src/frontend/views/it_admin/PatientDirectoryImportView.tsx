@@ -1,4 +1,4 @@
-import { ChangeEvent, useMemo, useRef, useState } from "react";
+import { ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
 import * as XLSX from "xlsx";
 import {
 	AlertCircle,
@@ -96,6 +96,10 @@ type ImportRow = Record<string, string | number | undefined> & {
 	_row: number;
 	_error?: string;
 };
+interface ImportFailureSummary {
+	_row: number;
+	error: string;
+}
 interface ImportRecord {
 	id: string;
 	fileName: string;
@@ -104,7 +108,132 @@ interface ImportRecord {
 	totalRows: number;
 	importedRows: number;
 	failedRows: number;
-	rows: ImportRow[];
+	// Row numbers + error strings only — never names/phones/addresses.
+	failures: ImportFailureSummary[];
+	// In-memory only for the just-completed import (enables selectedImport
+	// review + ImportTable in-session). Never written to localStorage.
+	rows?: ImportRow[];
+}
+// NDPR purpose/retention note: import history persists operational audit
+// metadata only (counts + per-row failure summaries) for a 30-day retention
+// window so IT can audit past directory imports without retaining patient
+// PHI at rest in the browser.
+const IMPORT_HISTORY_KEY = "zmc_patient_directory_imports";
+const IMPORT_HISTORY_CAP = 20;
+const IMPORT_HISTORY_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
+const BULK_IMPORT_CHUNK_SIZE = 200;
+
+// Strip patient identifiers from persisted failure text. Backend duplicate
+// errors embed quoted name + hospital number (e.g. Row 3: "Jane Doe"
+// ...), which must never rest in localStorage. Full detail stays in the
+// in-memory `rows` for the live session only.
+function sanitizeFailureError(message: string): string {
+	return message
+		.replace(/"[^"]*"/g, '"[redacted]"')
+		.replace(/\(Hospital Number:[^)]*\)/gi, "(Hospital Number: [redacted])")
+		.replace(/\([^)]*Card:[^)]*\)/gi, "(duplicate record [redacted])")
+		.replace(/\bZMC[-\s]*\d+(?:[-\s]*\d+)*/gi, "[redacted]")
+		.replace(/\bEC[-\s]*\d+(?:[-\s]*\d+)*/gi, "[redacted]")
+		.slice(0, 500);
+}
+
+function toMetadataRecord(raw: unknown): ImportRecord | null {
+	if (!raw || typeof raw !== "object") return null;
+	const candidate = raw as Record<string, unknown>;
+	if (typeof candidate.id !== "string") return null;
+	const failures: ImportFailureSummary[] = Array.isArray(candidate.failures)
+		? (candidate.failures as unknown[])
+				.filter(
+					(entry): entry is { _row: unknown; error: unknown } =>
+						!!entry && typeof entry === "object",
+				)
+				.filter(
+					(entry) =>
+						Number.isFinite(Number((entry as any)._row)) &&
+						typeof (entry as any).error === "string",
+				)
+			.map((entry: any) => ({
+				_row: Number(entry._row),
+				error: sanitizeFailureError(String(entry.error)),
+			}))
+		: Array.isArray(candidate.rows)
+			? (candidate.rows as unknown[])
+					.filter(
+						(entry): entry is ImportRow =>
+							!!entry &&
+							typeof entry === "object" &&
+							typeof (entry as ImportRow)._error === "string",
+					)
+				.map((entry) => ({
+					_row: Number((entry as ImportRow)._row),
+					error: sanitizeFailureError(String((entry as ImportRow)._error)),
+				}))
+			: [];
+	return {
+		id: candidate.id,
+		fileName: typeof candidate.fileName === "string" ? candidate.fileName : "Workbook",
+		importedAt:
+			typeof candidate.importedAt === "string"
+				? candidate.importedAt
+				: new Date().toISOString(),
+		importedBy:
+			typeof candidate.importedBy === "string"
+				? candidate.importedBy
+				: "IT Administrator",
+		totalRows: Number(candidate.totalRows) || 0,
+		importedRows: Number(candidate.importedRows) || 0,
+		failedRows: Number(candidate.failedRows) || failures.length,
+		failures,
+	};
+}
+
+function loadImportHistory(): ImportRecord[] {
+	try {
+		const raw = JSON.parse(
+			localStorage.getItem(IMPORT_HISTORY_KEY) || "[]",
+		);
+		if (!Array.isArray(raw)) return [];
+		const cutoff = Date.now() - IMPORT_HISTORY_RETENTION_MS;
+		const pruned = raw
+			.map(toMetadataRecord)
+			.filter((record): record is ImportRecord => record !== null)
+			.filter((record) => {
+				const timestamp = new Date(record.importedAt).getTime();
+				return !Number.isNaN(timestamp) && timestamp >= cutoff;
+			})
+			.slice(0, IMPORT_HISTORY_CAP);
+		// Enforce metadata-only + TTL at rest (strips legacy full-row PHI entries).
+		try {
+			localStorage.setItem(IMPORT_HISTORY_KEY, JSON.stringify(pruned));
+		} catch {
+			// Storage quota/privacy mode — history stays in-memory only.
+		}
+		return pruned;
+	} catch {
+		return [];
+	}
+}
+
+function toPatientPayload(row: ImportRow) {
+	return {
+		name: `${row["First Name"]} ${row["Last Name"]}`.trim(),
+		dateOfBirth: row["Date of Birth"],
+		gender: row.Gender,
+		phoneNumber: row["Phone Number"],
+		address: row.Address,
+		cardType: row["Card Type"],
+		maritalStatus: row["Marital Status"] || undefined,
+		hospitalNumber: row["Hospital Number"] || undefined,
+		idType: row["Document Type"] || undefined,
+		idNumber: row["ID Document Number"] || undefined,
+		nextOfKinName: row["Next of Kin"] || undefined,
+		nextOfKinPhone: row["Next of Kin Phone"] || undefined,
+		nextOfKinRelationship: row["Relationship Status"] || undefined,
+		registrationDate: row["Registration Date"] || undefined,
+		registeredBy: row["Registered By"] || undefined,
+		cardFee: 0,
+		status: "Completed",
+	};
 }
 interface PatientDirectoryImportViewProps {
 	currentUser?: User | null;
@@ -159,26 +288,49 @@ export default function PatientDirectoryImportView({
 	const [rows, setRows] = useState<ImportRow[]>([]);
 	const [message, setMessage] = useState("");
 	const [isImporting, setIsImporting] = useState(false);
-	const [history, setHistory] = useState<ImportRecord[]>(() => {
-		try {
-			return JSON.parse(
-				localStorage.getItem("zmc_patient_directory_imports") || "[]",
-			);
-		} catch {
-			return [];
-		}
-	});
+	const [importProgress, setImportProgress] = useState<{
+		done: number;
+		total: number;
+	} | null>(null);
+	const abortRef = useRef<AbortController | null>(null);
+	const [history, setHistory] = useState<ImportRecord[]>(() =>
+		loadImportHistory(),
+	);
 	const [selectedImport, setSelectedImport] = useState<ImportRecord | null>(
 		null,
 	);
+
+	useEffect(() => {
+		const clearSelection = () => {
+			abortRef.current?.abort();
+			setSelectedImport(null);
+			// Drop in-memory PHI preview on logout (persisted history is metadata-only).
+			setRows([]);
+			setFileName("");
+			setMessage("");
+		}
+		window.addEventListener("zmc-logout", clearSelection);
+		return () => window.removeEventListener("zmc-logout", clearSelection);
+	}, []);
 	const validRows = useMemo(() => rows.filter((row) => !row._error), [rows]);
 	const invalidRows = useMemo(() => rows.filter((row) => row._error), [rows]);
 	const saveHistory = (next: ImportRecord[]) => {
-		setHistory(next);
-		localStorage.setItem(
-			"zmc_patient_directory_imports",
-			JSON.stringify(next),
-		);
+		const capped = next.slice(0, IMPORT_HISTORY_CAP);
+		setHistory(capped);
+		// Persist metadata only — strip in-memory `rows` (full PHI) before write.
+		const metadataOnly = capped.map((record) => {
+			const { rows: _strippedRows, ...meta } = record;
+			void _strippedRows;
+			return meta;
+		});
+		try {
+			localStorage.setItem(IMPORT_HISTORY_KEY, JSON.stringify(metadataOnly));
+		} catch {
+			// Storage quota/privacy mode — history stays in-memory only.
+		}
+	};
+	const cancelImport = () => {
+		abortRef.current?.abort();
 	};
 
 	const downloadTemplate = () => {
@@ -261,61 +413,106 @@ export default function PatientDirectoryImportView({
 	};
 	const importPatients = async () => {
 		if (!validRows.length || isImporting) return;
+		const controller = new AbortController();
+		abortRef.current = controller;
 		setIsImporting(true);
+		setImportProgress({ done: 0, total: validRows.length });
 		setMessage(`Importing ${validRows.length} patient records...`);
+		const requestedBy =
+			currentUser?.name || currentUser?.username || "IT Administrator";
 		let importedRows = 0;
-		const completed = [...rows];
-		for (const row of validRows) {
-			try {
-				await apiFetch("/patients", {
-					method: "POST",
-					body: JSON.stringify({
-						name: `${row["First Name"]} ${row["Last Name"]}`.trim(),
-						dateOfBirth: row["Date of Birth"],
-						gender: row.Gender,
-						phoneNumber: row["Phone Number"],
-						address: row.Address,
-						cardType: row["Card Type"],
-						maritalStatus: row["Marital Status"] || undefined,
-						hospitalNumber: row["Hospital Number"] || undefined,
-						idType: row["Document Type"] || undefined,
-						idNumber: row["ID Document Number"] || undefined,
-						nextOfKinName: row["Next of Kin"] || undefined,
-						nextOfKinPhone: row["Next of Kin Phone"] || undefined,
-						nextOfKinRelationship:
-							row["Relationship Status"] || undefined,
-						registrationDate: row["Registration Date"] || undefined,
-						registeredBy: row["Registered By"] || undefined,
-						cardFee: 0,
-						status: "Completed",
-					}),
-				});
-				importedRows += 1;
-			} catch (error: any) {
-				const target = completed.find((item) => item._row === row._row);
-				if (target) target._error = error.message || "Registration failed";
+		let cancelled = false;
+		const completed = rows.map((row) => ({ ...row }));
+		for (
+			let start = 0;
+			start < validRows.length;
+			start += BULK_IMPORT_CHUNK_SIZE
+		) {
+			if (controller.signal.aborted) {
+				cancelled = true;
+				break;
 			}
+			const chunk = validRows.slice(start, start + BULK_IMPORT_CHUNK_SIZE);
+			const payloadRows = chunk.map(toPatientPayload);
+			setMessage(
+				`Importing ${validRows.length} patient records... Imported ${importedRows} of ${validRows.length}.`,
+			);
+			try {
+				const response = await apiFetch("/patients/bulk", {
+					method: "POST",
+					body: JSON.stringify({ rows: payloadRows, requestedBy }),
+					signal: controller.signal,
+				});
+				const failed: Array<{ index: number; error: string }> = Array.isArray(
+					response?.data?.failed,
+				)
+					? response.data.failed
+					: [];
+				const createdCount =
+					typeof response?.data?.created === "number"
+						? response.data.created
+						: payloadRows.length - failed.length;
+				failed.forEach((failure) => {
+					const source = chunk[failure?.index];
+					if (!source) return;
+					const target = completed.find((item) => item._row === source._row);
+					if (target) target._error = failure.error || "Registration failed";
+				});
+				importedRows += createdCount;
+			} catch (error: any) {
+				if (
+					controller.signal.aborted ||
+					error?.name === "AbortError"
+				) {
+					cancelled = true;
+					break;
+				}
+				// Bulk 400 (cap/invalid) or total-chunk failure: surface the backend
+				// message per-row and continue honestly with remaining chunks.
+				const bulkError = error?.message || "Bulk registration failed";
+				chunk.forEach((source) => {
+					const target = completed.find((item) => item._row === source._row);
+					if (target && !target._error) target._error = bulkError;
+				});
+			}
+			const done = Math.min(start + chunk.length, validRows.length);
+			setImportProgress({ done, total: validRows.length });
+			setMessage(
+				`Importing ${validRows.length} patient records... Imported ${importedRows} of ${validRows.length}.`,
+			);
 		}
+		if (controller.signal.aborted) cancelled = true;
+		const failedCount = completed.filter((row) => row._error).length;
+		// Sanitize persisted failure text: backend duplicate errors embed the
+		// patient name + hospital number, which must not rest in localStorage.
+		// Full detail stays in-memory (`rows`) for this session only.
+		const failures: ImportFailureSummary[] = completed
+			.filter((row) => row._error)
+			.map((row) => ({ _row: row._row, error: sanitizeFailureError(String(row._error)) }));
 		const record: ImportRecord = {
 			id: crypto.randomUUID(),
 			fileName,
 			importedAt: new Date().toISOString(),
-			importedBy:
-				currentUser?.name || currentUser?.username || "IT Administrator",
+			importedBy: requestedBy,
 			totalRows: rows.length,
 			importedRows,
-			failedRows: completed.filter((row) => row._error).length,
+			failedRows: failedCount,
+			failures,
 			rows: completed,
 		};
-		saveHistory([record, ...history].slice(0, 20));
+		saveHistory([record, ...history].slice(0, IMPORT_HISTORY_CAP));
 		setRows(completed);
 		setSelectedImport(record);
 		setMessage(
-			`${importedRows} patient record${importedRows === 1 ? "" : "s"} imported. ${record.failedRows} row${record.failedRows === 1 ? "" : "s"} need attention.`,
+			cancelled
+				? `Import cancelled. ${importedRows} patient record${importedRows === 1 ? "" : "s"} imported. ${record.failedRows} row${record.failedRows === 1 ? "" : "s"} need attention.`
+				: `${importedRows} patient record${importedRows === 1 ? "" : "s"} imported. ${record.failedRows} row${record.failedRows === 1 ? "" : "s"} need attention.`,
 		);
+		setImportProgress(null);
 		setIsImporting(false);
+		abortRef.current = null;
 	};
-	const displayedRows = selectedImport?.rows || rows;
+	const selectedRows = selectedImport?.rows;
 	return (
 		<div className="space-y-5">
 			<section className="border border-teal-200 bg-teal-50 p-5 shadow-sm">
@@ -373,14 +570,35 @@ export default function PatientDirectoryImportView({
 			</section>
 			{message && (
 				<div
-					className={`flex items-center gap-2 border px-4 py-3 text-sm ${invalidRows.length ? "border-amber-300 bg-amber-50 text-amber-900" : "border-emerald-300 bg-emerald-50 text-emerald-900"}`}
+					className={`border px-4 py-3 text-sm ${invalidRows.length ? "border-amber-300 bg-amber-50 text-amber-900" : "border-emerald-300 bg-emerald-50 text-emerald-900"}`}
 				>
-					{invalidRows.length ? (
-						<AlertCircle size={18} />
-					) : (
-						<CheckCircle2 size={18} />
+					<div className="flex items-center gap-2">
+						{invalidRows.length ? (
+							<AlertCircle size={18} />
+						) : (
+							<CheckCircle2 size={18} />
+						)}
+						<span>{message}</span>
+					</div>
+					{isImporting && importProgress && (
+						<div className="mt-2">
+							<div
+								role="progressbar"
+								aria-label="Bulk import progress"
+								aria-valuemin={0}
+								aria-valuemax={importProgress.total}
+								aria-valuenow={importProgress.done}
+								className="h-2 w-full overflow-hidden rounded bg-white/70 ring-1 ring-current"
+							>
+								<div
+									className="h-full bg-current transition-all"
+									style={{
+										width: `${importProgress.total ? Math.round((importProgress.done / importProgress.total) * 100) : 0}%`,
+									}}
+								/>
+							</div>
+						</div>
 					)}
-					{message}
 				</div>
 			)}
 			{rows.length > 0 && (
@@ -395,17 +613,29 @@ export default function PatientDirectoryImportView({
 								requiring correction.
 							</p>
 						</div>
-						<button
-							type="button"
-							disabled={!validRows.length || isImporting}
-							onClick={importPatients}
-							className="inline-flex items-center justify-center gap-2 bg-emerald-700 px-4 py-2 text-sm font-bold text-white disabled:cursor-not-allowed disabled:bg-slate-400"
-						>
-							<Upload size={17} />
-							{isImporting
-								? "Importing..."
-								: `Import ${validRows.length} patient records`}
-						</button>
+						<div className="flex flex-wrap items-center gap-2">
+							<button
+								type="button"
+								disabled={!validRows.length || isImporting}
+								onClick={importPatients}
+								className="inline-flex items-center justify-center gap-2 bg-emerald-700 px-4 py-2 text-sm font-bold text-white disabled:cursor-not-allowed disabled:bg-slate-400"
+							>
+								<Upload size={17} />
+								{isImporting
+									? `Importing... ${importProgress ? `${importProgress.done} of ${importProgress.total}` : ""}`
+									: `Import ${validRows.length} patient records`}
+							</button>
+							{isImporting && (
+								<button
+									type="button"
+									onClick={cancelImport}
+									aria-label="Cancel bulk import"
+									className="inline-flex items-center justify-center gap-2 border border-rose-300 bg-white px-4 py-2 text-sm font-bold text-rose-700 hover:bg-rose-50"
+								>
+									Cancel import
+								</button>
+							)}
+						</div>
 					</div>
 					<ImportTable rows={rows} />
 				</section>
@@ -467,7 +697,38 @@ export default function PatientDirectoryImportView({
 							Imported patient information
 						</p>
 					</div>
-					<ImportTable rows={displayedRows} />
+					{selectedRows && selectedRows.length ? (
+						<ImportTable rows={selectedRows} />
+					) : (
+						<div className="p-4">
+							<p className="text-sm text-slate-600">
+								Row-level details are not retained on this workstation
+								after reload — history keeps counts plus a failure
+								summary only (30-day audit retention).{" "}
+								{selectedImport.importedRows} imported,{" "}
+								{selectedImport.failedRows} not imported.
+							</p>
+							{selectedImport.failures.length ? (
+								<ul className="mt-3 max-h-56 space-y-1 overflow-auto text-xs">
+									{selectedImport.failures.map((failure) => (
+										<li
+											key={failure._row}
+											className="flex gap-2 border border-slate-100 bg-slate-50 px-2 py-1.5"
+										>
+											<span className="font-mono font-bold text-slate-500">
+												Row {failure._row}:
+											</span>
+											<span className="text-rose-700">{failure.error}</span>
+										</li>
+									))}
+								</ul>
+							) : (
+								<p className="mt-2 text-xs text-emerald-700">
+									All rows imported successfully.
+								</p>
+							)}
+						</div>
+					)}
 				</section>
 			)}
 		</div>

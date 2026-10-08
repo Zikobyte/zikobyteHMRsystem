@@ -1,6 +1,7 @@
 import { Response } from 'express';
 import { AuthenticatedRequest, isRoleAuthorized } from '../../middleware/auth.middleware';
 import { PatientsService } from './patients.service';
+import { BULK_IMPORT_MAX_ROWS } from './patients.validator';
 import { broadcastNotification } from '../../utils/ws.util';
 
 export class PatientsController {
@@ -65,6 +66,69 @@ export class PatientsController {
         success: true,
         message: 'Patient registered successfully',
         data: newPatient,
+      });
+    } catch (error: any) {
+      res.status(400).json({
+        success: false,
+        error: error.message,
+      });
+    }
+  };
+
+  // Transactional bulk import (IT-admin patient-directory import flow).
+  // Body: { rows: Array<create-patient payload>, requestedBy?: string }.
+  // Partial-commit contract: valid rows are committed, invalid rows are
+  // reported per-row in `failed` (frontend shows per-row errors; operator
+  // retries only those). Total failure throws in the service -> 400 with
+  // { success: false, error } and nothing is persisted (ROLLBACK).
+  public bulkCreate = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+    try {
+      const { rows, requestedBy } = req.body || {};
+
+      if (!Array.isArray(rows) || rows.length === 0) {
+        res.status(400).json({
+          success: false,
+          error: 'Request body must include a non-empty "rows" array of patient payloads.',
+        });
+        return;
+      }
+
+      if (rows.length > BULK_IMPORT_MAX_ROWS) {
+        res.status(400).json({
+          success: false,
+          error: `Bulk import is limited to ${BULK_IMPORT_MAX_ROWS} rows per request (received ${rows.length}). Split the file and retry.`,
+        });
+        return;
+      }
+
+      const registrar = typeof requestedBy === 'string' && requestedBy.trim()
+        ? requestedBy.trim().slice(0, 128)
+        : req.user?.username || 'unknown';
+
+      const { created, failed } = await this.service.bulkRegisterPatients(rows, registrar);
+
+      // Single summary broadcast post-commit (mirrors the Nurse + Cashier
+      // audiences of single registration without spamming N x 2 events).
+      broadcastNotification({
+        type: 'PATIENT_REGISTERED',
+        targetRole: 'Nurse',
+        message: `Bulk import by ${registrar}: ${created.length} patient(s) registered${failed.length > 0 ? `, ${failed.length} row(s) rejected` : ''}.`,
+        sender: registrar,
+        data: { created: created.length, failed: failed.length },
+      });
+
+      broadcastNotification({
+        type: 'PATIENT_REGISTERED',
+        targetRole: 'Cashier',
+        message: `Bulk import by ${registrar}: ${created.length} new patient card(s) issued${failed.length > 0 ? `, ${failed.length} row(s) rejected` : ''}.`,
+        sender: registrar,
+        data: { created: created.length, failed: failed.length },
+      });
+
+      res.status(201).json({
+        success: true,
+        message: `Bulk import complete: ${created.length} created, ${failed.length} failed.`,
+        data: { created: created.length, failed },
       });
     } catch (error: any) {
       res.status(400).json({
