@@ -239,18 +239,14 @@ export default function ReceptionTab({
 										return (
 											<tr
 												key={`${patient.id}-${idx}`}
-												onClick={() =>
-													onSelectDetail(patient)
-												}
+												onClick={() => onSelectDetail(patient)}
 												onKeyDown={(event) => {
 													if (
 														event.key === "Enter" ||
 														event.key === " "
 													) {
 														event.preventDefault();
-														onSelectDetail(
-															patient,
-														);
+														onSelectDetail(patient);
 													}
 												}}
 												tabIndex={0}
@@ -304,9 +300,7 @@ export default function ReceptionTab({
 													</button>
 													<button
 														onClick={() =>
-															onOpenReplacement(
-																patient,
-															)
+															onOpenReplacement(patient)
 														}
 														disabled={
 															!canManageCardReplacements(
@@ -315,9 +309,7 @@ export default function ReceptionTab({
 														}
 														className={`px-2.5 py-1 font-bold rounded-lg text-[10px] transition-colors inline-flex items-center gap-1 ${canManageCardReplacements(userRole) ? "bg-rose-50 hover:bg-rose-100 text-rose-700 cursor-pointer" : "bg-slate-100 text-slate-400 cursor-not-allowed"}`}
 														title={
-															canManageCardReplacements(
-																userRole,
-															)
+															canManageCardReplacements(userRole)
 																? "Replace Lost Card"
 																: "OPD or Cashier staff only"
 														}
@@ -377,8 +369,7 @@ export default function ReceptionTab({
 																			alt="Excel"
 																		/>
 																		<span>
-																			Excel / CSV
-																			(.csv)
+																			Excel / CSV (.csv)
 																		</span>
 																	</button>
 																	<button
@@ -399,8 +390,7 @@ export default function ReceptionTab({
 																			alt="Google Doc"
 																		/>
 																		<span>
-																			Word Document
-																			(.doc)
+																			Word Document (.doc)
 																		</span>
 																	</button>
 																	<button
@@ -421,8 +411,7 @@ export default function ReceptionTab({
 																			alt="PDF"
 																		/>
 																		<span>
-																			Print Card / PDF
-																			(.pdf)
+																			Print Card / PDF (.pdf)
 																		</span>
 																	</button>
 																</div>
@@ -449,8 +438,7 @@ export default function ReceptionTab({
 								Family Deposit Balances
 							</h3>
 							<p className="text-[10px] text-slate-500">
-								Shared family cards deducting from centralized
-								balances
+								Shared family cards deducting from centralized balances
 							</p>
 						</div>
 
@@ -465,17 +453,13 @@ export default function ReceptionTab({
 											{fam.name} Account
 										</h4>
 										<p className="text-[9px] text-slate-500 mt-0.5">
-											{" "}
-											مرکزی ڈپازٹ کھاتہ
+											Central Deposit Account
 										</p>
 									</div>
 									<div className="text-right flex items-center gap-3">
 										<div>
 											<span className="text-[11px] font-mono font-bold text-slate-950">
-												₦
-												{parseFloat(
-													fam.balance,
-												).toLocaleString()}
+												₦{parseFloat(fam.balance).toLocaleString()}
 											</span>
 										</div>
 										<button

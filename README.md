@@ -14,7 +14,7 @@ The application uses one Node.js server for the backend API, middleware, WebSock
 - `src/backend/middleware`: request authentication and authorization middleware
 - `src/backend/routes`: department and feature API routes
 - `src/backend/utils`: backend utilities, including WebSocket clients
-- `src/components`: React department views and dashboard components
+- `src/components/view`: Department views and dashboard components
 - `src/utils/api.ts`: frontend API and WebSocket client
 
 ## Run locally
