@@ -2,12 +2,18 @@ import { query, generateUUID, getPostgresStatus, getDB } from '../../database/db
 import { resolveLabTestPrice } from '../../catalogue/lab-catalogue';
 import { queuePricingReview } from '../../catalogue/pricing-review';
 
-async function populatePatientsWithRelationalData(rows: any[]): Promise<any[]> {
+// Executor with the same (text, params) signature as query(). Defaults to the
+// pool-level query(); bulk import passes a transaction-bound client query so
+// the whole batch shares one pg client (BEGIN/COMMIT/ROLLBACK in the service).
+// All statements stay parameterized ($1...) — never interpolate values.
+export type QueryExecutor = (text: string, params?: any[]) => Promise<any>;
+
+async function populatePatientsWithRelationalData(rows: any[], q: QueryExecutor = query): Promise<any[]> {
   if (rows.length === 0) return [];
   const ids = rows.map(r => r.id);
   
   // Query vitals (take latest recorded vitals for each patient, prioritizing populated records)
-  const vitalsRes = await query(`
+  const vitalsRes = await q(`
     SELECT DISTINCT ON (patient_id) * FROM zmc_patient_vitals 
     WHERE patient_id = ANY($1) 
     ORDER BY patient_id,
@@ -31,7 +37,7 @@ async function populatePatientsWithRelationalData(rows: any[]): Promise<any[]> {
   });
 
   // Query maternity records
-  const maternityRes = await query(`
+  const maternityRes = await q(`
     SELECT DISTINCT ON (patient_id) * FROM zmc_maternity_records 
     WHERE patient_id = ANY($1) 
     ORDER BY patient_id, recorded_at DESC
@@ -52,7 +58,7 @@ async function populatePatientsWithRelationalData(rows: any[]): Promise<any[]> {
   });
 
   // Query emergency records
-  const emergencyRes = await query(`
+  const emergencyRes = await q(`
     SELECT DISTINCT ON (patient_id) * FROM zmc_emergency_records 
     WHERE patient_id = ANY($1) 
     ORDER BY patient_id, recorded_at DESC
@@ -111,17 +117,17 @@ export class PatientsRepository {
     return populatePatientsWithRelationalData(res.rows);
   }
 
-  public async findById(id: string): Promise<any | null> {
-    const res = await query('SELECT * FROM zmc_patients WHERE id = $1', [id]);
+  public async findById(id: string, q: QueryExecutor = query): Promise<any | null> {
+    const res = await q('SELECT * FROM zmc_patients WHERE id = $1', [id]);
     if (res.rows.length === 0) return null;
-    const populated = await populatePatientsWithRelationalData(res.rows);
+    const populated = await populatePatientsWithRelationalData(res.rows, q);
     return populated[0];
   }
 
-  public async getNextHospitalNumber(): Promise<string> {
+  public async getNextHospitalNumber(q: QueryExecutor = query): Promise<string> {
     const year = new Date().getFullYear();
     try {
-      const res = await query('SELECT hospital_number FROM zmc_patients WHERE hospital_number LIKE $1', [`ZMC-${year}-%`]);
+      const res = await q('SELECT hospital_number FROM zmc_patients WHERE hospital_number LIKE $1', [`ZMC-${year}-%`]);
       let maxSerial = 0;
       for (const row of res.rows) {
         const match = (row.hospital_number || '').match(/ZMC-\d{4}-(\d+)/);
@@ -130,13 +136,13 @@ export class PatientsRepository {
           if (!isNaN(num) && num > maxSerial) maxSerial = num;
         }
       }
-      const countRes = await query('SELECT count(*) as count FROM zmc_patients');
+      const countRes = await q('SELECT count(*) as count FROM zmc_patients');
       const totalCount = parseInt(countRes.rows[0]?.count || '0', 10);
       let nextNum = Math.max(maxSerial + 1, totalCount + 1);
 
       while (true) {
         const candidate = `ZMC-${year}-${String(nextNum).padStart(4, '0')}`;
-        const check = await query('SELECT id FROM zmc_patients WHERE hospital_number = $1', [candidate]);
+        const check = await q('SELECT id FROM zmc_patients WHERE hospital_number = $1', [candidate]);
         if (check.rows.length === 0) {
           return candidate;
         }
@@ -149,11 +155,24 @@ export class PatientsRepository {
     }
   }
 
-  public async create(patient: any): Promise<any> {
+  public async create(
+    patient: any,
+    executor: QueryExecutor = query,
+    opts?: { silent?: boolean }
+  ): Promise<any> {
+    // Route every `query(...)` statement below through the caller's executor:
+    // the pool-level query() for single registration, or the transaction-bound
+    // pg client for bulk import (single client + BEGIN/COMMIT/ROLLBACK owned by
+    // PatientsService.bulkRegisterPatients). Local intentionally shadows the
+    // module import so no statement in this multi-table write can escape the
+    // caller's transaction. `silent` suppresses per-row WS broadcasts — the
+    // bulk controller emits one summary broadcast after commit instead, so a
+    // ROLLBACK never emits phantom notifications.
+    const query: QueryExecutor = executor;
     const id = generateUUID();
     const hospitalNumber = (patient.hospitalNumber && String(patient.hospitalNumber).trim())
       ? String(patient.hospitalNumber).trim()
-      : await this.getNextHospitalNumber();
+      : await this.getNextHospitalNumber(executor);
     let maternityNumber = null;
     if (patient.cardType === 'Maternity') {
       maternityNumber = hospitalNumber.replace('ZMC', 'MAT');
@@ -276,10 +295,10 @@ export class PatientsRepository {
 
     // Record corresponding cards in zmc_clinical_cards table
     if (patient.cardType === 'Maternity') {
-      await this.createClinicalCard(id, hospitalNumber, 3000, 'Standard');
-      await this.createClinicalCard(id, maternityNumber!, 2000, 'Maternity');
+      await this.createClinicalCard(id, hospitalNumber, 3000, 'Standard', executor);
+      await this.createClinicalCard(id, maternityNumber!, 2000, 'Maternity', executor);
     } else {
-      await this.createClinicalCard(id, hospitalNumber, patient.cardFee || 0, patient.cardType || 'Standard');
+      await this.createClinicalCard(id, hospitalNumber, patient.cardFee || 0, patient.cardType || 'Standard', executor);
     }
 
     // Family Account automatic creation/lookup and association
@@ -302,7 +321,7 @@ export class PatientsRepository {
       }
 
       // Create association
-      await this.createFamilyAssociation(familyId, id, patient.familyRelationship || 'Dependent');
+      await this.createFamilyAssociation(familyId, id, patient.familyRelationship || 'Dependent', executor);
 
       // Deduct card fee from family account balance if standard
       if (patient.cardType === 'Standard') {
@@ -310,7 +329,8 @@ export class PatientsRepository {
           familyId,
           -3000,
           patient.registeredBy || 'Staff',
-          `Card Fee deduction for newly registered member: ${patient.name}`
+          `Card Fee deduction for newly registered member: ${patient.name}`,
+          executor
         );
       }
     }
@@ -342,7 +362,8 @@ export class PatientsRepository {
         companyId,
         id,
         patient.employeeId || null,
-        patient.designation || null
+        patient.designation || null,
+        executor
       );
 
       // Create corporate authorization if reference is provided
@@ -351,7 +372,8 @@ export class PatientsRepository {
           id,
           companyId,
           patient.letterReference,
-          patient.registeredBy || 'Staff'
+          patient.registeredBy || 'Staff',
+          executor
         );
       }
     }
@@ -491,7 +513,9 @@ export class PatientsRepository {
       // Set patient status to 'Emergency Dispatched'
       await query("UPDATE zmc_patients SET status = 'Emergency Dispatched' WHERE id = $1", [id]);
 
-      // Broadcast emergency alert to clinical staff
+      // Broadcast emergency alert to clinical staff (skipped in bulk/silent
+      // mode — the bulk controller emits one summary broadcast post-commit).
+      if (!opts?.silent) {
       try {
         const { broadcastNotification } = await import('../../utils/ws.util');
         broadcastNotification({
@@ -503,9 +527,10 @@ export class PatientsRepository {
       } catch (wsErr) {
         console.warn('Failed to broadcast emergency websocket alert:', wsErr);
       }
+      }
     }
 
-    return this.findById(id);
+    return this.findById(id, executor);
   }
 
   public async update(id: string, updates: any): Promise<any | null> {
@@ -651,39 +676,39 @@ export class PatientsRepository {
     return res.rows;
   }
 
-  public async addFamilyDeposit(familyId: string, amount: number, createdBy: string, description: string): Promise<any> {
-    await query('UPDATE zmc_family_accounts SET balance = balance + $1 WHERE id = $2', [amount, familyId]);
-    await query(`
+  public async addFamilyDeposit(familyId: string, amount: number, createdBy: string, description: string, q: QueryExecutor = query): Promise<any> {
+    await q('UPDATE zmc_family_accounts SET balance = balance + $1 WHERE id = $2', [amount, familyId]);
+    await q(`
       INSERT INTO zmc_family_transactions (id, family_id, amount, type, description, created_by)
       VALUES ($1, $2, $3, 'Deposit', $4, $5)
     `, [generateUUID(), familyId, amount, description, createdBy]);
-    const res = await query('SELECT * FROM zmc_family_accounts WHERE id = $1', [familyId]);
+    const res = await q('SELECT * FROM zmc_family_accounts WHERE id = $1', [familyId]);
     return res.rows[0];
   }
 
-  public async createClinicalCard(patientId: string, cardNumber: string, cardFee: number, category: string): Promise<void> {
-    await query(`
+  public async createClinicalCard(patientId: string, cardNumber: string, cardFee: number, category: string, q: QueryExecutor = query): Promise<void> {
+    await q(`
       INSERT INTO zmc_clinical_cards (id, patient_id, card_number, card_fee, issue_date, status, category)
       VALUES ($1, $2, $3, $4, CURRENT_DATE, 'Active', $5)
     `, [generateUUID(), patientId, cardNumber, cardFee, category]);
   }
 
-  public async createFamilyAssociation(familyId: string, patientId: string, relationship: string): Promise<void> {
-    await query(`
+  public async createFamilyAssociation(familyId: string, patientId: string, relationship: string, q: QueryExecutor = query): Promise<void> {
+    await q(`
       INSERT INTO zmc_family_members (id, family_id, patient_id, relationship)
       VALUES ($1, $2, $3, $4)
     `, [generateUUID(), familyId, patientId, relationship]);
   }
 
-  public async createCompanyAssociation(companyId: string, patientId: string, employeeId: string, designation: string): Promise<void> {
-    await query(`
+  public async createCompanyAssociation(companyId: string, patientId: string, employeeId: string, designation: string, q: QueryExecutor = query): Promise<void> {
+    await q(`
       INSERT INTO zmc_company_members (id, company_id, patient_id, employee_id, designation)
       VALUES ($1, $2, $3, $4, $5)
     `, [generateUUID(), companyId, patientId, employeeId, designation]);
   }
 
-  public async createCompanyAuthorization(patientId: string, companyId: string, letterReference: string, verifiedBy: string): Promise<void> {
-    await query(`
+  public async createCompanyAuthorization(patientId: string, companyId: string, letterReference: string, verifiedBy: string, q: QueryExecutor = query): Promise<void> {
+    await q(`
       INSERT INTO zmc_company_authorizations (id, patient_id, company_id, letter_reference, verified_by)
       VALUES ($1, $2, $3, $4, $5)
     `, [generateUUID(), patientId, companyId, letterReference, verifiedBy]);
@@ -968,7 +993,7 @@ export class PatientsRepository {
     return res.rows;
   }
 
-  public async checkDuplicates(name: string, phoneNumber: string): Promise<any[]> {
+  public async checkDuplicates(name: string, phoneNumber: string, q: QueryExecutor = query): Promise<any[]> {
     const trimmedName = (name || '').trim();
     const trimmedPhone = (phoneNumber || '').trim();
 
@@ -977,19 +1002,19 @@ export class PatientsRepository {
     }
 
     if (trimmedName && trimmedPhone && trimmedPhone !== 'Unknown') {
-      const res = await query(`
+      const res = await q(`
         SELECT * FROM zmc_patients 
         WHERE LOWER(TRIM(name)) = LOWER($1) OR (phone_number = $2 AND phone_number != '' AND phone_number != 'Unknown')
       `, [trimmedName, trimmedPhone]);
       return res.rows;
     } else if (trimmedName) {
-      const res = await query(`
+      const res = await q(`
         SELECT * FROM zmc_patients 
         WHERE LOWER(TRIM(name)) = LOWER($1)
       `, [trimmedName]);
       return res.rows;
     } else if (trimmedPhone && trimmedPhone !== 'Unknown') {
-      const res = await query(`
+      const res = await q(`
         SELECT * FROM zmc_patients 
         WHERE phone_number = $1
       `, [trimmedPhone]);

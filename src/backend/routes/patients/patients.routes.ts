@@ -1178,6 +1178,31 @@ router.post('/:id/re-queue', async (req: any, res: any) => {
   }
 });
 
+// Bulk patient import (IT-admin patient-directory import flow). MUST stay above
+// every '/:id' route so '/bulk' is never swallowed by a param catch-all.
+// Roles mirror POST / exactly. Per-row bodies are validated inside the service
+// with the same pure validator (validateCreatePatientPayload), not the
+// single-row middleware (which reads req.body directly), and creation reuses
+// PatientsService.registerPatient (server-authoritative cardFee).
+router.post(
+  '/bulk',
+  authorizeRoles([
+    'OPD Clerk',
+    'Receptionist',
+    'Records Officer',
+    'IT Administrator',
+    'Administrator',
+    'Management',
+    'Doctor',
+    'Nurse',
+    'Head Nurse',
+    'Cashier',
+    'Eye Clinic',
+    'Account Officer'
+  ]) as any,
+  controller.bulkCreate as any
+);
+
 // Retrieve all patients or specific patient
 router.get('/', controller.getAll as any);
 router.get('/:id', controller.getById as any);

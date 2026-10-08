@@ -88,6 +88,11 @@ export interface Patient {
   maternityDetails?: MaternityDetails | null;
   emergencyDetails?: EmergencyDetails | null;
   balance?: number;
+  // Outstanding ledger total. Backend stores zmc_patients.outstanding_balance
+  // (DECIMAL); refreshCache leaves it snake_case while some routes alias camels.
+  // Both spellings are accepted until payloads are unified.
+  outstandingBalance?: number | string | null;
+  outstanding_balance?: number | string | null;
   patientCategory?: string;
   recordedPaymentsHistory?: any[];
 }

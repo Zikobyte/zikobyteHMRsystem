@@ -12,7 +12,7 @@ import {
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { apiFetch } from "../utils/api";
-import PatientDetailModal from "./PatientDetailModal";
+import PatientDetailModal from "./patient-detail/PatientDetailModal";
 import PendingBalanceModal from "./PendingBalanceModal";
 
 interface AdmissionsViewProps {

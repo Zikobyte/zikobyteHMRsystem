@@ -16,7 +16,7 @@
 import { AlertCircle, CheckCircle2 } from "lucide-react";
 import { AnimatePresence, motion } from 'motion/react';
 import { useEffect, useState } from 'react';
-import DoctorSpecializedDirectory from '@/components/DoctorSpecializedDirectory';
+import DoctorSpecializedDirectory from '@/components/doctor-directory/DoctorSpecializedDirectory';
 import type { User } from "@/types";
 import DoctorTabs from "./_components/DoctorTabs";
 import { useAdmittedOrders } from "./_hooks/useAdmittedOrders";

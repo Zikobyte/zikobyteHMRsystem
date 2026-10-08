@@ -16,6 +16,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import type React from 'react';
+import { apiFetch } from '@/utils/api';
 
 export interface DispensingRecord {
   id: string;
@@ -123,24 +124,12 @@ export function useNurseDispensing(): UseNurseDispensingResult {
     message: ''
   });
 
-  const getAuthHeaders = () => {
-    const token = localStorage.getItem('zmc_token') || localStorage.getItem('token') || localStorage.getItem('zmc_auth_token');
-    return {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {})
-    };
-  };
-
   // Fetch initial dispensing records and common drugs
   const fetchDispensingData = async () => {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch('/api/nursing/dispensing', {
-        headers: getAuthHeaders()
-      });
-      if (!res.ok) throw new Error(`HTTP error ${res.status}`);
-      const data = await res.json();
+      const data = await apiFetch('/nursing/dispensing');
       if (data.success) {
         setRecords(data.records || []);
         if (data.commonDrugs) {
@@ -158,28 +147,22 @@ export function useNurseDispensing(): UseNurseDispensingResult {
   // Fetch registered patients for smart autocomplete
   const fetchPatients = async () => {
     try {
-      const res = await fetch('/api/nursing/patient-cards', {
-        headers: getAuthHeaders()
-      });
-      if (res.ok) {
-        const data = await res.json();
+      try {
+        const data = await apiFetch('/nursing/patient-cards');
         if (data.success && Array.isArray(data.patients)) {
           setRegisteredPatients(data.patients);
           return;
         }
+      } catch (err) {
+        // Fall through to /patients fallback below
       }
 
-      const fallbackRes = await fetch('/api/patients', {
-        headers: getAuthHeaders()
-      });
-      if (fallbackRes.ok) {
-        const data = await fallbackRes.json();
-        const pts = (data.patients || data || []).map((p: any) => ({
-          name: `${p.first_name || ''} ${p.last_name || ''}`.trim() || p.name || 'Patient',
-          hospital_number: p.hospital_number || p.patient_id || p.card_number || p.id || ''
-        }));
-        setRegisteredPatients(pts);
-      }
+      const data = await apiFetch('/patients');
+      const pts = (data.patients || data || []).map((p: any) => ({
+        name: `${p.first_name || ''} ${p.last_name || ''}`.trim() || p.name || 'Patient',
+        hospital_number: p.hospital_number || p.patient_id || p.card_number || p.id || ''
+      }));
+      setRegisteredPatients(pts);
     } catch (err) {
       // Non-blocking
     }
@@ -239,14 +222,12 @@ export function useNurseDispensing(): UseNurseDispensingResult {
         recordedBy: recordedBy.trim() || 'nurse1'
       };
 
-      const res = await fetch('/api/nursing/dispensing', {
+      const data = await apiFetch('/nursing/dispensing', {
         method: 'POST',
-        headers: getAuthHeaders(),
         body: JSON.stringify(payload)
       });
 
-      const data = await res.json();
-      if (!res.ok || !data.success) {
+      if (!data.success) {
         throw new Error(data.error || 'Failed to save dispensing record');
       }
 
@@ -283,11 +264,9 @@ export function useNurseDispensing(): UseNurseDispensingResult {
   // Toggle review status
   const handleToggleReview = async (recordId: string) => {
     try {
-      const res = await fetch(`/api/nursing/dispensing/${recordId}/toggle-review`, {
-        method: 'PATCH',
-        headers: getAuthHeaders()
+      const data = await apiFetch(`/nursing/dispensing/${recordId}/toggle-review`, {
+        method: 'PATCH'
       });
-      const data = await res.json();
       if (data.success && data.record) {
         setRecords(prev => prev.map(r => r.id === recordId ? data.record : r));
       }
@@ -302,11 +281,9 @@ export function useNurseDispensing(): UseNurseDispensingResult {
       return;
     }
     try {
-      const res = await fetch(`/api/nursing/dispensing/${recordId}`, {
-        method: 'DELETE',
-        headers: getAuthHeaders()
+      const data = await apiFetch(`/nursing/dispensing/${recordId}`, {
+        method: 'DELETE'
       });
-      const data = await res.json();
       if (data.success) {
         setRecords(prev => prev.filter(r => r.id !== recordId));
       }

@@ -13,7 +13,7 @@ import { useSession } from "@/lib/routing/session";
 import { doctorSubTab, resolveViewPlan } from "@/lib/routing/view-plan";
 import { SessionProvider } from "@/lib/routing/session";
 
-const DashboardView = lazy(() => import("@/views/DashboardView"));
+const DashboardOverview = lazy(() => import("@/views/dashboard/DashboardOverview"));
 const OPDRegistrationView = lazy(() => import("@/views/opd/OPDRegistrationView"));
 const EyeClinicView = lazy(() => import("@/views/eye/EyeClinicView"));
 const DoctorView = lazy(() => import("@/views/doctor/DoctorView"));
@@ -21,12 +21,12 @@ const UserManagementView = lazy(
 	() => import("@/views/it_admin/UserManagementView"),
 );
 const CashierView = lazy(() => import("@/views/cashier/CashierView"));
-const LaboratoryView = lazy(() => import("@/views/LaboratoryView"));
-const PharmacyView = lazy(() => import("@/views/PharmacyView"));
-const HRDashboardView = lazy(() => import("@/views/HRDashboardView"));
+const LaboratoryView = lazy(() => import("@/views/lab/LaboratoryView"));
+const PharmacyView = lazy(() => import("@/views/pharmacy/PharmacyView"));
+const HRDashboardView = lazy(() => import("@/views/hr/HRDashboardView"));
 const NursingView = lazy(() => import("@/views/nursing/NursingView"));
 const PatientDirectoryImportView = lazy(
-	() => import("@/views/PatientDirectoryImportView"),
+	() => import("@/views/it_admin/PatientDirectoryImportView"),
 );
 
 export default function App() {
@@ -85,7 +85,7 @@ function AppShell(): React.JSX.Element {
 			>
 				<Suspense fallback={<DeskFallback />}>
 					{plan?.kind === "dashboard" && (
-						<DashboardView
+						<DashboardOverview
 							user={user}
 							onNavigateToPatients={() => {
 								navigate(

@@ -1,39 +1,45 @@
 import { Request, Response, NextFunction } from 'express';
 
-export function validateCreatePatient(req: Request, res: Response, next: NextFunction): void {
-  const { cardType, patientCanProvideDetails } = req.body;
+// Cap for POST /patients/bulk — keeps a single transaction bounded (IT-admin
+// patient-directory import flow splits larger files client-side).
+export const BULK_IMPORT_MAX_ROWS = 200;
+
+// Pure per-row validator shared by POST / (via validateCreatePatient below)
+// and POST /bulk (via PatientsService.bulkRegisterPatients). Mutates `body`
+// only for the unidentified-emergency defaults, exactly as the single-patient
+// path does. Returns an error message string, or null when the payload is valid.
+export function validateCreatePatientPayload(body: any): string | null {
+  const { cardType, patientCanProvideDetails } = body || {};
 
   // For unconscious or unidentified emergency intake
   if (cardType === 'Emergency' && patientCanProvideDetails === false) {
-    if (!req.body.name || typeof req.body.name !== 'string' || req.body.name.trim() === '') {
-      req.body.name = 'Unidentified Emergency Patient';
+    if (!body.name || typeof body.name !== 'string' || body.name.trim() === '') {
+      body.name = 'Unidentified Emergency Patient';
     }
-    if (!req.body.dateOfBirth || isNaN(Date.parse(req.body.dateOfBirth))) {
-      req.body.dateOfBirth = new Date().toISOString().split('T')[0];
+    if (!body.dateOfBirth || isNaN(Date.parse(body.dateOfBirth))) {
+      body.dateOfBirth = new Date().toISOString().split('T')[0];
     }
-    if (!req.body.gender || !['Male', 'Female', 'Other'].includes(req.body.gender)) {
-      req.body.gender = 'Male';
+    if (!body.gender || !['Male', 'Female', 'Other'].includes(body.gender)) {
+      body.gender = 'Male';
     }
-    if (!req.body.phoneNumber || typeof req.body.phoneNumber !== 'string' || req.body.phoneNumber.trim() === '') {
-      req.body.phoneNumber = '08000000000';
+    if (!body.phoneNumber || typeof body.phoneNumber !== 'string' || body.phoneNumber.trim() === '') {
+      body.phoneNumber = '08000000000';
     }
-    if (!req.body.address || typeof req.body.address !== 'string' || req.body.address.trim() === '') {
-      req.body.address = 'Emergency Trauma Scene';
+    if (!body.address || typeof body.address !== 'string' || body.address.trim() === '') {
+      body.address = 'Emergency Trauma Scene';
     }
   }
 
-  const { name, dateOfBirth, gender, phoneNumber, address } = req.body;
+  const { name, dateOfBirth, gender, phoneNumber, address } = body || {};
 
   // Validate Full Name: must not be empty, must be at least 2 characters, and cannot be purely whitespace
   if (!name || typeof name !== 'string' || name.trim().length < 2) {
-    res.status(400).json({ success: false, error: 'Patient full name is required and must be at least 2 characters.' });
-    return;
+    return 'Patient full name is required and must be at least 2 characters.';
   }
 
   // Validate Date of Birth: must be a valid date and CANNOT be in the future
   if (!dateOfBirth || isNaN(Date.parse(dateOfBirth))) {
-    res.status(400).json({ success: false, error: 'Valid Date of Birth is required' });
-    return;
+    return 'Valid Date of Birth is required';
   }
 
   const dobDate = new Date(dateOfBirth);
@@ -41,34 +47,38 @@ export function validateCreatePatient(req: Request, res: Response, next: NextFun
   today.setHours(23, 59, 59, 999);
 
   if (dobDate > today) {
-    res.status(400).json({ success: false, error: 'Date of Birth cannot be in the future. Please enter a valid birth date.' });
-    return;
+    return 'Date of Birth cannot be in the future. Please enter a valid birth date.';
   }
 
   if (dobDate < new Date('1900-01-01')) {
-    res.status(400).json({ success: false, error: 'Date of Birth cannot be earlier than year 1900.' });
-    return;
+    return 'Date of Birth cannot be earlier than year 1900.';
   }
 
   if (!gender || !['Male', 'Female', 'Other'].includes(gender)) {
-    res.status(400).json({ success: false, error: 'Gender must be Male, Female, or Other' });
-    return;
+    return 'Gender must be Male, Female, or Other';
   }
 
   // Validate Phone Number: must contain at least 7 digits and at most 15 digits
   const phoneDigits = typeof phoneNumber === 'string' ? phoneNumber.replace(/\D/g, '') : '';
   if (!phoneNumber || typeof phoneNumber !== 'string' || phoneDigits.length < 7 || phoneDigits.length > 15) {
-    res.status(400).json({ success: false, error: 'A valid and complete phone number (at least 7 digits) is required.' });
-    return;
+    return 'A valid and complete phone number (at least 7 digits) is required.';
   }
 
   if (!address || typeof address !== 'string' || address.trim() === '') {
-    res.status(400).json({ success: false, error: 'Address is required' });
-    return;
+    return 'Address is required';
   }
 
   if (!cardType || !['Standard', 'Maternity', 'Emergency'].includes(cardType)) {
-    res.status(400).json({ success: false, error: 'Card type must be Standard, Maternity, or Emergency' });
+    return 'Card type must be Standard, Maternity, or Emergency';
+  }
+
+  return null;
+}
+
+export function validateCreatePatient(req: Request, res: Response, next: NextFunction): void {
+  const error = validateCreatePatientPayload(req.body);
+  if (error) {
+    res.status(400).json({ success: false, error });
     return;
   }
 
