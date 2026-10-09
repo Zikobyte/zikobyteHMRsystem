@@ -91,7 +91,7 @@ Request path (production): Browser → Nginx `:443` (TLS, static SPA or proxy) �
 | Component | Owns | Must NOT own |
 |-----------|------|--------------|
 | **SPA (React 19 + Vite 6 + Tailwind 4, per-role views)** | Rendering; form validation mirroring the server; token storage (`zmc_token` + `zmc_user` in localStorage) with expiry check; single `socketManager` subscription with 4-second reconnect; all server calls through `apiFetch` only (`src/utils/api.ts`) — never raw `fetch()`, never hardcoded origins; optimistic UI reconciled against server truth | Price maths, status transitions, authorisation decisions. Never trusts localStorage data for truth post-migration. |
-| **`server.ts` (composition entrypoint only)** | Wiring: Express JSON parsing, CORS allowlist, `/api/*` route mounts (before Vite/static middleware), `/ws` upgrade handling, dev Vite middleware vs prod `dist/` static, health endpoint. kept thin — extract any growing logic to modules on touch | Business logic, SQL, long inline endpoint handlers (the maintenance and audit-log handlers currently inline here must be extracted to modules when next touched). |
+| **`server.ts` (composition entrypoint only)** | Wiring: Express JSON parsing, CORS allowlist, `/api/*` route mounts (before Vite/static middleware), `/ws` upgrade handling, dev Vite middleware vs prod `dist/` static, health endpoint. kept thin — extract any growing logic to modules on touch | Business logic, SQL, long inline endpoint handlers. |
 | **Express API (`/api/*`, versioned as `/api/v1`)** | JWT authentication, RBAC authorisation, whitelist validators, transactional billing/state-machine enforcement, server-owned catalogue pricing, audit-log writes, WebSocket fan-out after each mutation via `ws.util` broadcast | Direct SQL string building (parametrised repository layer only), PHI in logs, secrets in code. |
 | **PostgreSQL 15+ with `zmc_*` tables** | System of record; foreign keys, CHECKs, unique invoice/receipt numbers, `*_kobo BIGINT CHECK (>=0)`, queue-repair support, `ANALYZE` maintenance | Business-rule branching (kept in the service layer for testability; the database enforces invariants). |
 | **In-memory `dbCache` + `refreshCache()`** | Read accelerator for list screens (existing dual model: Postgres primary, cache second). Full per-table SELECT with snake_case→camelCase mapping on refresh; queue-repair UPDATEs run inside refresh. New reads must paginate (full-table load will OOM at scale) with indexes on `patient_id` / `encounter_id` / `status`. Every new column must extend the refresh mapping or it is invisible to the UI. | Durability or write authority — writes go to Postgres first, then refresh. |
@@ -521,7 +521,7 @@ NetGuide hardware usable: RAID1 2×1 TB SSD → **~1 TB** primary (OS + PostgreS
 | Staging | Spare PC or VM mirroring production (Ubuntu 22.04, same Nginx/PostgreSQL) | **anonymised** production dump (PHI scrubbed via script) | pre-production verification, restore-drill target, UAT by department heads |
 | Production | `192.168.1.1` | live | clinic |
 
-**Commands (Bun only):** `bun install` · `bun run dev` (full system on `http://localhost:3000`) · `bun run lint` (`bunx tsc --noEmit`) · `bun run build` (Vite + esbuild bundle to `dist/`) · `bun run start:production` (`NODE_ENV=production`, serves `dist/` static). Note: `package.json` scripts still reference `tsx`/`node` — migrate them to the Bun invocations above as part of the hardening phase. Never run two dev servers; port-in-use means stop the old instance. Never commit `.env`.
+**Commands (Bun only):** `bun install` · `bun run dev` (full system on `http://localhost:3000`) · `bun run lint` (`bunx tsc --noEmit`) · `bun run build` (Vite + esbuild bundle to `dist/`) · `bun run start:production` (`NODE_ENV=production`, serves `dist/` static). Never run two dev servers; port-in-use means stop the old instance. Never commit `.env`.
 
 **Update process (offline-safe, 2-developer friendly):** tag release → `bun run build` → checksum → USB/scp to staging → apply DDL batch (up-only, backward-compatible idempotent ALTERs; destructive renames forbidden) → smoke matrix (ping, login all roles with correct default tabs per `getDefaultTabForUser`, outpatient→Cashier sync, WebSocket notify with `AUTH_SUCCESS`, backup run) → UAT sign → maintenance window (announce, pre-snapshot `pg_dump -Fc`) → production deploy → apply DDL → restart Bun process (systemd) → health + smoke → tag + changelog + audit entry. Rollback = previous build + pre-snapshot restore (documented data-loss window; prefer forward-fix). Health: `GET /api/health`; diagnostics: `GET /api/db-test` (sans password, with table counts and local backup stats).
 
@@ -620,7 +620,7 @@ Estimates in weeks are [ASSUMPTION]. Developer split throughout: Developer A own
 
 ## 19. Testing strategy
 
-- **Lint gate (`bun run lint` = `bunx tsc --noEmit`):** zero NEW errors against the ~30-error baseline (known items: Cashier view card fields, Doctor specialised-directory maternity/emergency fields, Doctor view icon/setter types, outpatient registration snake-versus-camel fields, returning-patient outstanding balance). Fix by aligning `types.ts` with the backend mapping, never with `any`. Block release on any new error.
+- **Lint gate (`bun run lint` = `bunx tsc --noEmit`):** zero errors — the former ~30-error baseline (Cashier card fields, Doctor directory fields, icon/setter types, outpatient snake-versus-camel fields, returning-patient balance) was cleared and verified 2026-10-09. Fix any new error by aligning `types.ts` with the backend mapping, never with `any`. Block release on any new error.
 - **Build gate (`bun run build`):** required for every frontend change — the Vite build must pass.
 - **Smoke gate (`bun run dev` → `http://localhost:3000`):** login per role with the correct default tab, `/api/health` OK, WebSocket connects (`AUTH_SUCCESS`, no reconnect loop), outpatient→Cashier sync visible, one notification received end-to-end.
 - **Unit tests (Bun test runner):** kobo maths (`formatKobo`, total − paid = balance), state-machine guards (illegal-transition table), validators (whitelist bodies, unknown-code `422`), catalogue pricing snapshots. Target ≥ 80% on billing and authorisation code.
@@ -637,17 +637,18 @@ Estimates in weeks are [ASSUMPTION]. Developer split throughout: Developer A own
 
 ## 20. Known weaknesses, scaling path, technical debt, risks, open questions, next iteration
 
-### 20.1 Known weaknesses (as-built → design fix)
-1. Trust-model login, Reset Demo available to all, client-side prices/status — fixed by the hardening and MVP core phases (server authorisation + catalogue + guards).
-2. Eye/nursing side-ledgers unlinked; discharge `Paid`-absorption destroys audit — fixed by unification + `AbsorbedIntoDischarge` (see data model and billing logic sections).
-3. Manual discount application; dual lab prices ambiguous — fixed by automatic application + explicit SKUs.
-4. No TLS, `SELECT *`, dynamic SQL, secrets in docs — banned (see security section). Legacy plaintext seed passwords — migrated on write.
+### 20.1 Known weaknesses (status verified 2026-10-09 — this section keeps no open defect list by design)
+
+Cleared and removed from this list: lint-error baseline (`tsc --noEmit` exits 0); Reset Demo restricted to `it_admin` with typed-confirmation modals; emergency flags (`is_doctor_on_call`, `is_after_hours`) recorded with server-authoritative fee constants; dual lab prices stored as explicit SKUs (`LFT_STD`/`LFT_COMP`, `SEUC_STD`/`SEUC_COMP`).
+
+Remaining weaknesses are tracked as ordered work items in `.todo` (auth hardening, kobo migration, discount auto-apply, discharge absorption linking, eye/nursing ledger unification, transport hardening, insecure-pattern bans).
 
 ### 20.2 Scaling path (no rewrite until triggers)
 Single server handles 120 visits/day comfortably. Scale triggers: sustained CPU over 70%, database over 300 GB, or a second site. Path: read-replica on the backup node → split WebSocket/API processes → LAN NAS for attachments → (only then) a second site with async logical replication. DICOM/PACS gets a separate server from day one if approved.
 
-### 20.3 Technical debt register
-DDL-in-code ALTERs accumulate in `db.repo.ts` (acceptable by design; extract a versioned directory only when outgrown); `refreshCache` full-table pull → paginated + scoped queries with new indexes; client workbook/seed/localStorage paths → retired after the decommission phase; dual `amount`/`amount_paid` spellings in `types.ts` → kobo-only DTOs; inline `server.ts` maintenance/audit handlers → extracted modules; oversize backend routes and 200 KB+ views → split on touch.
+### 20.3 Technical debt register (tracked in `.todo` — this section keeps no open list by design)
+
+Debt items (DDL-in-code growth, `refreshCache` full-table pagination, localStorage retirement, kobo-only DTOs, `server.ts` module extraction, oversize file splits, `package.json` Bun scripts, pricing-review wiring, silent-default alias cleanup) are tracked as ordered work items in `.todo`. The rules that prevent new debt stay in their normative sections: file-size discipline in the architecture overview section, Bun-only commands in the deployment section, explicit-column and whitelist-validator rules in the migration and security sections.
 
 ### 20.4 Risks (ranked by likelihood × impact)
 1. **Power/server loss without a tested restore** (High likelihood, High impact) — mitigate: monthly drill + USB rotation + paper pack.
@@ -657,13 +658,9 @@ DDL-in-code ALTERs accumulate in `db.repo.ts` (acceptable by design; extract a v
 5. **Scope creep (DICOM/portal/HMO)** (Medium likelihood, Medium impact) — park in Suggested Additions; change-control only.
 6. **After-hours/dual-price ambiguity causing cashier disputes** (Medium likelihood, Medium impact) — explicit SKUs + flags now; policy sign-off pre-go-live.
 
-### 20.5 Open questions (need owner + date before go-live)
-1. Card + consultation bundling always, or exemptions (staff/under-5/revisit)? Owner: Medical Director.
-2. Discharge partial — release with balance or hold until settled? Owner: Management/Account.
-3. After-hours meaning and any surcharge? Which LFT/SEUC price applies when? (See the after-hours and dual-price conflicts.) Owner: Lab + Management.
-4. Retention years for clinical versus audit versus HR; Data Protection Officer appointee; breach-notification owner. Owner: Legal/HR [VERIFY Commission specifics].
-5. Bed count/ward names + detention billing rule (is observation charged?). Owner: Nursing.
-6. UPS runtime under full load; second locked room for backup NAS/USB safe. Owner: IT/Facilities [VERIFY].
+### 20.5 Open questions (tracked in `.todo` with owner + date before go-live — this section keeps no open list by design)
+
+Policy and legal sign-offs (card/consultation bundling exemptions, discharge-partial release rule, after-hours meaning and surcharge, LFT/SEUC pick rule, retention years and Data Protection Officer appointment, ward names and detention billing, backup premises) moved to `.todo` on 2026-10-09 so this guide holds design only.
 
 ### 20.6 Next iteration
 Hardening-phase kickoff: secret/TLS/validator sweep + kobo migration + the freeze/inventory and authentication migration phases. Deliverable: staging PostgreSQL with authentication + patients + encounters + queue and a green smoke matrix. Then the MVP core phase per the roadmap above.

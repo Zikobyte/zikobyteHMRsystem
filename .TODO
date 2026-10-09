@@ -1,0 +1,54 @@
+# Available TODOS
+
+- Doctor lab lists (views/doctor/_utils/doctor-catalog.ts) vs backend LAB_CATALOGUE — derive display groups from the canonical source so price drift becomes structurally impossible.
+
+- Eye catalog (views/eye/_utils/eye-catalog.ts — EYE_TESTS / PROCEDURES / FRAMES / LENSES / ACCESSORIES, 26 items) vs the backend eye catalogue — same treatment: check whether a server-side canonical exists and whether the frontend copy should derive from it.
+
+## Moved from docs/SYSTEM_DESIGN_GUIDE.md on 2026-10-09 (verified against the codebase; in document order)
+## Already cleared (removed from the design guide, not tracked here): lint-error baseline (tsc exits 0); Reset Demo restricted to it_admin with typed-confirmation modals; emergency flags recorded with server-authoritative fee constants; dual lab prices stored as explicit SKUs.
+
+- Auth hardening — remove plaintext seed passwords and default-password fallback: seeds still plaintext in src/backend/database/db.repo.ts (admin/admin123 and related seed rows) and src/backend/routes/auth/auth.repository.ts (compat users with admin123/opd123/cash123 and similar); src/backend/routes/auth/auth.service.ts still accepts direct-match plaintext plus a universal 'password' fallback. Keep bcrypt compare (cost 12) and migrate-on-write; force resets and delete the fallback.
+
+- CORS allowlist — server.ts still falls back to permissive `origin: true` when CORS_ORIGIN is unset; restrict to the intranet origin and fail closed in production.
+
+- Security middleware — no helmet-equivalent headers, no login rate-limiting, no express.json size limit, no zod validators in package.json; add all four.
+
+- LAN TLS termination — no https.createServer or certificate handling in server.ts; add private certificate authority plus Nginx TLS front, HSTS with HTTP redirect, and wss-only WebSocket.
+
+- Explicit column lists — `SELECT *` still used across the application (payments, patients, hr, nursing, exports routes and db.repo.ts refreshCache); replace with explicit column lists per the migration and security sections.
+
+- Dynamic SET column whitelist — src/backend/routes/users/users.repository.ts builds `SET ${setClause}` from arbitrary request keys and src/backend/routes/patients/patients.repository.ts falls back to the raw key when unmapped; whitelist updatable columns in validators.
+
+- Kobo money migration — nothing in src/ uses amount_kobo yet; floats persist (CARD_FEES constants, card_fee NUMERIC columns, 3000.00 literals); migrate money to *_kobo BIGINT with round-half-up, a reconciliation report, and a single formatKobo helper at the UI edge.
+
+- Automatic discount application — the approve handler (payments.routes.ts discount-requests approve) trusts the cashier-computed final_amount and writes it straight to the invoice; add the immutable discount_applications row with server-side recompute plus broadcast to cashier.
+
+- Discharge absorption linking — no DISCH- invoice logic exists; link absorbed lines via absorbed_into_discharge_id with AbsorbedIntoDischarge status (never mark Paid) and replace the hardcoded discharge_bill fallbacks in nursing.routes.ts.
+
+- Eye billing unification — eye patients live in separate zmc_eye_patients / zmc_eye_consultations tables with no invoice link (see the no-invoice comment in patients.routes.ts eye section); route eye charges through standard invoices and review nursing dispensing/injection record linkage to patient plus encounter.
+
+- Prototype store decommission — localStorage stores still live (pharmacy stock/procurement/admitted/queue, eye patients/consultations, cashier eye references); migrate one domain at a time to PostgreSQL behind the feature flag, then remove the fallback and block production seeding without written approval.
+
+- Pricing-review wiring — the pricing-review module and zmc_pricing_review table exist but no order path returns 422 UNKNOWN_CODE or writes a review row; wire catalogue-code validation into lab, pharmacy, and eye order paths.
+
+- Silent-default price alias removal — lab-catalogue.ts maps generic names ('Liver Function Test (LFT)', 'Electrolyte, Urea, Creatinine (E/U/C)') to the comprehensive SKUs; force an explicit standard/comprehensive pick with no silent default.
+
+- refreshCache pagination — refreshCache runs full-table SELECT * with no LIMIT or OFFSET; switch list reads to paginated scoped queries and add indexes on patient_id, encounter_id, and status.
+
+- server.ts module extraction — server.ts (562 lines) still carries inline audit-log, clear-store, and system-reset handlers; extract to maintenance and audit-log modules mounted before the Vite/static middleware.
+
+- Oversize file splits on touch — db.repo.ts (~2,315 lines), nursing.routes.ts (~2,427), payments.routes.ts (~2,081), hr.routes.ts (~1,124), exports.routes.ts (~874) all still over the 500-line threshold; split by domain when touched.
+
+- Bun script migration — package.json dev/build/start scripts still use tsx and node; switch to the Bun invocations (bun server.ts, bun dist/server.cjs) and drop tsx from the runtime path.
+
+- Policy sign-off: card and consultation bundling exemptions (staff, under-5, revisit) — Owner: Medical Director.
+
+- Policy sign-off: discharge-partial rule (release with balance or hold until settled) — Owner: Management/Account.
+
+- Policy sign-off: after-hours meaning and any surcharge, plus which LFT/SEUC price applies when — Owner: Lab plus Management.
+
+- Policy sign-off: retention years for clinical versus audit versus HR records, Data Protection Officer appointee, breach-notification owner (verify Commission specifics) — Owner: Legal/HR.
+
+- Policy sign-off: bed count and ward names plus detention billing rule (is observation charged?) — Owner: Nursing.
+
+- Policy sign-off: UPS runtime under full load plus second locked room for backup NAS and USB safe (verify) — Owner: IT/Facilities.

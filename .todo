@@ -1,5 +1,0 @@
-# Available TODOS
-
-- Doctor lab lists (views/doctor/_utils/doctor-catalog.ts) vs backend LAB_CATALOGUE — derive display groups from the canonical source so price drift becomes structurally impossible.
-
-- Eye catalog (views/eye/_utils/eye-catalog.ts — EYE_TESTS / PROCEDURES / FRAMES / LENSES / ACCESSORIES, 26 items) vs the backend eye catalogue — same treatment: check whether a server-side canonical exists and whether the frontend copy should derive from it.
