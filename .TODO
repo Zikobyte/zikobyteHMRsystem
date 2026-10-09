@@ -31,6 +31,16 @@
 - Dynamic SET column whitelist — src/backend/routes/users/users.repository.ts builds `SET ${setClause}` from arbitrary request keys and src/backend/routes/patients/patients.repository.ts falls back to the raw key when unmapped; whitelist updatable columns in validators.
 
 - Kobo money migration — nothing in src/ uses amount_kobo yet; floats persist (CARD_FEES constants, card_fee NUMERIC columns, 3000.00 literals); migrate money to *_kobo BIGINT with round-half-up, a reconciliation report, and a single formatKobo helper at the UI edge.
+  - REMINDER (added 2026-10-10): plan the streamlined kobo conversion implementation before building. Inputs: the two deliverables documents in docs/internal (Kelechi_Deliverables.docx, Taiwo_Deliverables.docx) and the analysis shared on 2026-10-10 (<https://claude.ai/share/6ace458f-237d-439b-926b-c3857ba52fca>), summarised below. Billing and schema change, so it goes through the full path (/ship-feature); it depends on the migration runner. Principle: kobo is the only unit past one boundary layer (naira in only at the admin price form, naira out only at formatKobo).
+    - Column shape: every money column becomes `*_kobo BIGINT NOT NULL CHECK (>= 0)` — zmc_invoices amount/total_amount, zmc_payments amount, zmc_outstanding_balances total_bill/amount_paid/balance, zmc_emergency_records total_bill/cash_collected, plus catalogue prices (price_kobo). This also fixes the history.outstanding vs outstandingBalances and total_amount/amount field-mismatch bugs (same root cause). Note: no fee_catalogue table exists today; catalogue prices live in src/backend/catalogue, so decide whether price_kobo is a code constant or a new table.
+    - Backfill: one migration converts legacy naira ×100 (round-half-up) with a per-row before/after reconciliation report. It is the only place naira→kobo conversion of existing data happens; no ad hoc conversions in bug-fix PRs.
+    - Catalogue: single source of truth in kobo. Any admin price-edit form takes naira and converts in exactly one service function.
+    - Billing logic: pure integer kobo math (totals, discounts, balances). Grep for `* 100` / `/ 100` inside billing code; each hit is a misplaced conversion to remove.
+    - Validators: payment/invoice endpoints accept integer `amountKobo` only and reject decimals, to stop a client sending 5000.00 naira instead of 500000 kobo.
+    - types.ts: kobo-only DTOs; delete the naira-named and dual amount/amount_paid spellings rather than keeping both.
+    - refreshCache: add the renamed `_kobo` columns to the snake_case→camelCase mapping, or the UI loses them while the DB is correct.
+    - Frontend: replace all manual formatting (string concatenation, `/100`, `.toFixed(2)`) with one shared formatKobo() helper.
+    - Sequencing: schema rename + backfill + validator change land as one atomic migration BEFORE the 15-day sprint's Days 3–6 payment-isolation fixes (e.g. the partial-payment OR-predicate bug), so those fixes are written once against the final schema.
 
 - Automatic discount application — the approve handler (payments.routes.ts discount-requests approve) trusts the cashier-computed final_amount and writes it straight to the invoice; add the immutable discount_applications row with server-side recompute plus broadcast to cashier.
 
