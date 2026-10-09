@@ -1,19 +1,30 @@
 # Available TODOS
 
+## Agent workflow queue (added 2026-10-09; run through /ship-feature in this order)
+
+- Migration runner — first feature through the agent workflow. Build a `migrations/` folder of chronological up/down SQL files plus a small runner (applied-migrations table, up, down, status), invoked via a package script. Until it exists, schema changes stay add-only idempotent DDL in src/backend/database/db.repo.ts with a written rollback note in the feature spec. Owner: database-engineer.
+
+- Test infrastructure — second feature through the agent workflow. Approved: supertest, a throwaway test PostgreSQL, React Testing Library + happy-dom, Playwright. Requirements: keep `bun test` as the single runner for unit, API (supertest) and component (RTL + happy-dom) tests; do not rewrite or restyle existing tests; Playwright lives in its own `e2e/` folder with its own runner and `bun test` must not pick those files up; limit the happy-dom setup to component tests if possible; replace tests/bun-test.d.ts with @types/bun rather than extending the stub; add separate scripts for unit, integration and e2e; the current 89 tests must still pass unchanged after setup; show the result to the user. Until this lands, agents must state "TOOLING MISSING" in their reports for API/component/e2e/migration/restore tests instead of skipping them silently. Owners: qa-engineer (test config, fixtures) with backend-engineer for package.json dependency and script changes.
+
+- HIGH PRIORITY: Audit-log trimming and clearing — first real product feature through the agent workflow. server.ts:97 (POST /api/audit-logs deletes rows beyond the newest 500), server.ts:131 (clearAuditLogsHandler runs TRUNCATE TABLE zmc_audit_logs), server.ts:142-143 (POST /api/audit-logs/clear and DELETE /api/audit-logs routes), plus the matching in-memory cache trim/clear. Audit logs must be append-only and tamper-evident with no edit or delete path, admin included. Known issue: reviewers block on it only when a change touches audit logging. Likely depends on the migration runner and test infrastructure.
+
 - Doctor lab lists (views/doctor/_utils/doctor-catalog.ts) vs backend LAB_CATALOGUE — derive display groups from the canonical source so price drift becomes structurally impossible.
 
 - Eye catalog (views/eye/_utils/eye-catalog.ts — EYE_TESTS / PROCEDURES / FRAMES / LENSES / ACCESSORIES, 26 items) vs the backend eye catalogue — same treatment: check whether a server-side canonical exists and whether the frontend copy should derive from it.
 
 ## Moved from docs/SYSTEM_DESIGN_GUIDE.md on 2026-10-09 (verified against the codebase; in document order)
-## Already cleared (removed from the design guide, not tracked here): lint-error baseline (tsc exits 0); Reset Demo restricted to it_admin with typed-confirmation modals; emergency flags recorded with server-authoritative fee constants; dual lab prices stored as explicit SKUs.
 
 - Auth hardening — remove plaintext seed passwords and default-password fallback: seeds still plaintext in src/backend/database/db.repo.ts (admin/admin123 and related seed rows) and src/backend/routes/auth/auth.repository.ts (compat users with admin123/opd123/cash123 and similar); src/backend/routes/auth/auth.service.ts still accepts direct-match plaintext plus a universal 'password' fallback. Keep bcrypt compare (cost 12) and migrate-on-write; force resets and delete the fallback.
 
 - CORS allowlist — server.ts still falls back to permissive `origin: true` when CORS_ORIGIN is unset; restrict to the intranet origin and fail closed in production.
 
-- Security middleware — no helmet-equivalent headers, no login rate-limiting, no express.json size limit, no zod validators in package.json; add all four.
+- Security middleware — no helmet-equivalent headers, no login rate-limiting, no zod validators in package.json; add all three.
+
+- Maintenance endpoint role checks — server.ts:146 (POST /api/maintenance/cache-clear), server.ts:263 (POST /api/maintenance/vacuum) and server.ts:322 (GET /api/db-test, which returns connection config and table counts) use authenticateJWT only, with no authorizeRoles, so any logged-in user of any role can call them. Add authorizeRoles(['IT Administrator']) to match the it_admin-only maintenance rule in the design guide, audit each call, and cover role denial with a regression test. Also tighten the endpoints that already check roles but admit 'Administrator' alongside 'IT Administrator': server.ts:155 (POST /api/maintenance/clear-store), server.ts:211 (POST /api/maintenance/system-reset), server.ts:294 (GET /api/maintenance/backup) and server.ts:409 (POST /api/db-test/seed) — restrict them to IT Administrator. Restricting by name is not enough on its own: src/backend/middleware/auth.middleware.ts:41-44 (ROLE_EQUIVALENTS) treats Administrator, IT Administrator, Management and Super Administrator as interchangeable, and line 65 lets all four bypass every authorizeRoles check, so Management currently passes any maintenance or clinical role check. Add a strict it_admin-only check for maintenance that ignores the equivalence map and bypass, and review whether the bypass should exist at all (it conflicts with the role-permission matrix, where it_admin never edits clinical or billing content). Owner: backend-engineer.
 
 - LAN TLS termination — no https.createServer or certificate handling in server.ts; add private certificate authority plus Nginx TLS front, HSTS with HTTP redirect, and wss-only WebSocket.
+
+- ON DELETE CASCADE on clinical foreign keys — src/backend/database/db.repo.ts has 44 ON DELETE CASCADE foreign keys (first at around lines 495, 513-514, 525, 531: patient vitals, maternity and emergency records), declared with `REFERENCES zmc_patients(id) ON DELETE CASCADE` / `zmc_encounters(id) ON DELETE CASCADE`, so deleting a patient or encounter silently destroys clinical history. Switch clinical, financial and audit foreign keys to ON DELETE RESTRICT (with soft delete) via the migration runner. Owner: database-engineer.
 
 - Explicit column lists — `SELECT *` still used across the application (payments, patients, hr, nursing, exports routes and db.repo.ts refreshCache); replace with explicit column lists per the migration and security sections.
 

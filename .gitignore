@@ -7,5 +7,6 @@ coverage/
 .env*
 !.env.example
 .opencode/
+.claude
 internal/
 bun.lock
