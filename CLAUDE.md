@@ -87,3 +87,5 @@ Each agent preloads the project skills it needs from `.claude/skills/` (listed i
 - **Domain rules, required only for code that touches the area:** break-glass access and optimistic locking (record access and editing); allergy checks (prescribing and dispensing).
 - **Scope follows the design guide:** HMO/NHIA billing and the drug-interaction checker are out of the first release. hospital-manager records them as future gaps or behind future flags.
 - **Known issue:** audit-log trimming and clearing (`server.ts:97`, `:131`, `:142-143`) is a HIGH `.TODO` item. It blocks only changes that touch audit logging.
+
+- DO NOT EVER COMMIT, ONLT CREATE A COMMIT MESSAGE AT THE END OF THE ACTIVITY AND LEAVE IT AT THAT!!
