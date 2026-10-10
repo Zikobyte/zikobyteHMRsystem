@@ -29,3 +29,5 @@ Day 1 is documentation only. Defects found are logged in [defect-log.md](defect-
 - **Kobo cutover first.** The cashier inventory shows money stored as naira floats under five different field names. The kobo reminder in `.TODO` says the schema rename, backfill and validator change should land before the Day 3 payment fixes, so those fixes are written once against the final schema. That cutover depends on the migration runner (also in `.TODO`) — decide its timing before Day 3.
 - **Scripted database tests.** The Day 3–6 gates need scripted database tests, which depend on the test-infrastructure item in `.TODO`.
 - **Unscheduled Priority 0 defects** in the defect log (missing role checks, eye payment verification, maternity supply balance in memory only) need owners.
+
+**Next:** [Day 2 — state-transition matrix](../day-02/README.md).
