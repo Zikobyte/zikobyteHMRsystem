@@ -8,7 +8,7 @@ Priority 0 means it loses or misroutes money or clinical data, or blocks a core 
 
 | # | Defect | Where | Priority | Planned fix |
 | --- | --- | --- | --- | --- |
-| 1 | Unidentified emergency sends phone "Unknown" and is always rejected | `views/opd/_hooks/useRegistrationForm.ts:502-504` | Priority 0 | Day 4, D05 (emergency intake contract) |
+| 1 | Unidentified emergency sends phone "Unknown" and is always rejected | `views/opd/_hooks/useRegistrationForm.ts:504` | Priority 0 | Day 4, D05 (emergency intake contract) |
 | 2 | "Eye Clinic" card option offered but always rejected by the validator | intake forms; `useRegistrationForm.ts:411` | Priority 1 | Day 4, D25 (registration contract mismatch) |
 | 3 | `duplicatesFound` not cleared on a no-match response, so submit can stay blocked | `useRegistrationForm.ts:322` | Priority 1 | Day 4, D18 |
 | 4 | Single registration has no transaction; failures leave partial records | `patients.repository.ts:158` onwards | Priority 0 | Day 6, D02 |
@@ -36,16 +36,16 @@ BE = `src/backend/routes/payments/payments.routes.ts`.
 | # | Defect | Where | Priority | Planned fix |
 | --- | --- | --- | --- | --- |
 | 21 | `/partial` marks every invoice for the patient (`patient_id = $1 OR id = $2`) | BE:1793-1795 | Priority 0 | Day 3, D08 |
-| 22 | Generic payment and confirmation clear other cashier rows for the patient | BE:840 onwards, BE:147 onwards | Priority 0 | Day 3, D07 |
+| 22 | Generic payment and confirmation clear other cashier rows for the patient (queue and routing code; invoice marking in these two handlers is already scoped) | BE:840 onwards, BE:147 onwards | Priority 0 | Day 3, D07 |
 | 23 | Lab UI picks the first Unpaid invoice matching encounter or patient | `LabPaymentsTab.tsx:154-164` | Priority 0 | Day 3, D28 |
 | 24 | POST `/payments` never compares amount with the invoice; client sets `status`; browser guesses totals | BE:840-937, BE:854; `useCashierPayments.ts:661-681` | Priority 0 | Day 3, D07, and Day 10, D28 |
 | 25 | `/patients/opd/queue/:id/route` doesn't exist; partial lab payments never reach the lab | `useCashierPayments.ts:232` | Priority 0 | Day 4, D09 |
 | 26 | Emergency handover confirmation marks Paid without comparing to the invoice | BE:147 onwards | Priority 0 | Day 4, D10 |
 | 27 | Settlement uses client `patientId`, checks the balance outside the transaction | BE:1597-1658 | Priority 0 | Day 4, D11, and Day 5, D13 |
-| 28 | `confirm-walk-in` updates every Unconfirmed payment for the patient | BE:743 | Priority 0 | Day 3, with D07 |
+| 28 | `confirm-walk-in` rewrites the amount and status of every payment on the encounter (Completed ones included) and every Unconfirmed payment the patient has | BE:743 | Priority 0 | Day 3, with D07 |
 | 29 | Walk-in lab creates an Unconfirmed full-amount payment that can be confirmed as cash collected | BE:516-521; `DepartmentHandoverPanel.tsx` | Priority 0 | Day 10, D30 |
 | 30 | RecordPaymentForm walk-in branch omits `patientId` and gets 400 | `useCashierPayments.ts:751-759` | Priority 1 | Day 10, D30 |
-| 31 | `/partial` falls back to client `totalBill` | BE:1712 | Priority 0 | Day 3, D08 |
+| 31 | `/partial` falls back to client `totalBill` only when no invoice resolves; the invoice lookup by encounter ignores the service | BE:1712 | Priority 0 | Day 3, D08 |
 | 32 | Discount `originalAmount` from client; approval overwrites invoice amount; can miss the invoice | BE:1854-2004 | Priority 0 | Day 9, D31 (also `.TODO` "Automatic discount application") |
 | 33 | Cashiers see Approve/Reject buttons that return 403; HR sees an empty list | `DiscountsTab.tsx:151-168`; BE:1938 | Priority 1 | Day 9, D31 |
 | 34 | Idempotency support exists but the frontend never sends keys | BE:75-110 | Priority 0 | Day 6 (money submissions) |

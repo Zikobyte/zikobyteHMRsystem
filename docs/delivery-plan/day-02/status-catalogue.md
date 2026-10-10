@@ -9,7 +9,7 @@ Abbreviations: `db` = `src/backend/database/db.repo.ts`, `pr` = `src/backend/rou
 - Every state column is a free-text `VARCHAR`. There are **no CHECK constraints, enums or foreign keys on state**. `PATIENT_STATUS` in `patients.constants.ts:14-23` is never imported.
 - `zmc_encounters` has no `status` column; its state is `clinical_status` (default `Pending Vitals`), `payment_status` (default `Unpaid`) and `priority` (default `Normal`) (`db:493-508`).
 - `zmc_patient_queue` has `queue_type` and `status` but no department column, so routing works by rewriting or inserting `queue_type` (`db:946-956`).
-- There are **no unique or partial indexes** on queue items or encounters, **no `FOR UPDATE` row locks and no `ON CONFLICT`** on any billing table, so the database never blocks a duplicate.
+- There is **no `CREATE INDEX` anywhere** (only primary keys and a few inline UNIQUEs), **no `FOR UPDATE` row locks**, and no CHECK constraints, so the database never blocks a duplicate. The one `ON CONFLICT` on a billing table makes things worse: the eye card invoice uses `ON CONFLICT (id) DO NOTHING` with an id that repeats every 1,000 seconds, silently dropping invoices (`patients.routes.ts:810-818`).
 - `src/frontend/types.ts` types every status as plain `string`.
 
 ## Columns and defaults

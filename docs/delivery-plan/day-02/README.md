@@ -8,6 +8,8 @@
 | --- | --- | --- |
 | [state-transition-matrix.md](state-transition-matrix.md) | Taiwo (OPD, cashier) + Kelechi (doctor) | Target states, 8 OPD and 12 cashier transitions, next queue by service, hidden transitions, 29 new gaps (46–74) |
 | [status-catalogue.md](status-catalogue.md) | Taiwo | Every state column, every value the code writes, and what each desk treats as its queue |
+| [qa-db-evaluation.md](qa-db-evaluation.md) | qa-engineer + database-engineer review | Readiness for Day 3, corrections applied to Days 1–2, gaps 75–85, recommended order, decisions |
+| [integrity-queries.sql](integrity-queries.sql) | database-engineer | Read-only checks for existing bad data (run on a restored copy only) |
 
 ## Acceptance gate
 
