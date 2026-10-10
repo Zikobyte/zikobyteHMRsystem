@@ -44,11 +44,13 @@ From `docs/SYSTEM_DESIGN_GUIDE.md`, which is the target design; the code may lag
 
 ## Todos
 
-`.TODO` (repo root, uppercase) is the tracked backlog. Read it at the start of a session and again before finishing work that its related activities. Remove an item when it's resolved, and mention open items that relate to the current task.
+`.TODO` (repo root) is the tracked backlog. Read it at the start of a session and again before finishing work that its related activities. Remove an item when it's resolved, and mention open items that relate to the current task.
 
 ## Rules
 
 - Never label plan items with bare alphanumeric codes (L1, P0, G2, etc.). Always use the full category name — Level 1, Priority 0, Gate 2 - or a descriptive title. This keeps every item traceable without needing a legend
+
+- DO NOT EVER COMMIT, ONLT CREATE A COMMIT MESSAGE AT THE END OF THE ACTIVITY AND LEAVE IT AT THAT!!
 
 ## Agent Workflow
 
@@ -87,5 +89,3 @@ Each agent preloads the project skills it needs from `.claude/skills/` (listed i
 - **Domain rules, required only for code that touches the area:** break-glass access and optimistic locking (record access and editing); allergy checks (prescribing and dispensing).
 - **Scope follows the design guide:** HMO/NHIA billing and the drug-interaction checker are out of the first release. hospital-manager records them as future gaps or behind future flags.
 - **Known issue:** audit-log trimming and clearing (`server.ts:97`, `:131`, `:142-143`) is a HIGH `.TODO` item. It blocks only changes that touch audit logging.
-
-- DO NOT EVER COMMIT, ONLT CREATE A COMMIT MESSAGE AT THE END OF THE ACTIVITY AND LEAVE IT AT THAT!!

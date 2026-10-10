@@ -106,6 +106,8 @@ Facts found today that touch the doctor side:
 
 ## 7. New gaps
 
+Gaps 75 onwards, found by the QA and database evaluation, are in [qa-db-evaluation.md](qa-db-evaluation.md).
+
 Found on Day 2 and not in the Day 1 log. Planned days use the D-numbers in the deliverables documents.
 
 | # | Gap | Where | Priority | Planned fix |
@@ -114,7 +116,7 @@ Found on Day 2 and not in the Day 1 log. Planned days use the D-numbers in the d
 | 47 | `refreshCache` overwrites patient status | `db.repo.ts:221-228` | Priority 1 | With 46 |
 | 48 | `refreshCache` runs after every HR write and from a maintenance endpoint any user can call | `hr.routes.ts:274`–`:1115`; `server.ts:145-148` | Priority 1 | With 46; role check is in `.TODO` "Maintenance endpoint role checks" |
 | 49 | New encounters inserted with `payment_status = 'Paid'` and no payment | `patients.repository.ts:735` | Priority 0 | Day 9, D22 |
-| 50 | Every later encounter re-books the old emergency cash as a new Unconfirmed payment | `patients.repository.ts:795-809` | Priority 0 | Day 9, D22 |
+| 50 | Every later encounter re-books the old emergency cash as a new Unconfirmed payment | `patients.repository.ts:789-809` | Priority 0 | Day 9, D22 |
 | 51 | Re-queue and new encounter skip triage and payment; no open-encounter check; `visit_number` can collide | `patients.repository.ts:717-830` | Priority 0 | Day 9, D22 |
 | 52 | Each triage save adds another cashier item (D19) | `patients.repository.ts:924-928` | Priority 0 | Day 5, D19 |
 | 53 | Triage success message and broadcast say "doctor"; backend routes to cashier | `useOpdQueue.ts:184-186`; `patients.controller.ts:302-310` | Priority 1 | Day 5, D21/D22 |
@@ -129,7 +131,7 @@ Found on Day 2 and not in the Day 1 log. Planned days use the D-numbers in the d
 | 62 | Partial payment completes every cashier item for the patient and opens no next queue; encounter payment untouched | `payments.routes.ts:1799-1805` | Priority 0 | Day 4, D09 (OR predicate: Day 3, D08) |
 | 63 | Debt balance ignores earlier payments; a second partial creates a second debt | `payments.routes.ts:1760-1789` | Priority 0 | Day 4, D11 |
 | 64 | Settling a debt leaves the invoice Partially Paid and routes nobody | `payments.routes.ts:1597-1658` | Priority 0 | Day 4, D11 |
-| 65 | Confirm accepts any status except Completed, lets the collector confirm, writes no lab payment row, double confirm routes twice | `payments.routes.ts:147-347` | Priority 0 | Day 4, D10; Day 5, D13 |
+| 65 | Confirm accepts any status except Completed, lets the collector confirm, writes no lab payment row; two concurrent confirms both route (a sequential repeat gets 400) | `payments.routes.ts:147-347` | Priority 0 | Day 4, D10; Day 5, D13 |
 | 66 | Confirm-walk-in sets encounter Paid on partial, rewrites every queue item, can be repeated | `payments.routes.ts:690-809` | Priority 0 | Day 10, D30 |
 | 67 | Emergency invoice status `Unconfirmed` is invisible to the cashier's unpaid list | `patients.repository.ts:479`; `cashier-totals.ts:136-139` | Priority 1 | Day 4, D10 |
 | 68 | Discount approval can reprice a Paid invoice, is never marked used, isn't guarded against double approval; duplicate Pending requests allowed | `payments.routes.ts:1854-2004` | Priority 1 | Day 9, D31 |

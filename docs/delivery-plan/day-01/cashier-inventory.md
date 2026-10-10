@@ -38,13 +38,13 @@ Each is also in [defect-log.md](defect-log.md) with a planned day.
 
 **Server trusts the client's totals**
 1. POST `/payments` never compares `amount` with the invoice; "full vs partial" is decided in the browser (`useCashierPayments.ts:732`), yet the server marks invoice and encounter Paid. With no invoice, the total is a browser guess: 5000 / 8500 / 5000 / pending-balance suggestion (`useCashierPayments.ts:661-681`).
-2. `/partial` falls back to the client's `totalBill` (BE:1712).
+2. `/partial` falls back to the client's `totalBill` when no invoice resolves (BE:1712-1726); the encounter lookup picks the latest invoice regardless of service.
 3. Discount `originalAmount` comes from the browser and is never checked; approval overwrites `invoices.amount`. If the reference holds an encounter ID, approval updates nothing.
 4. POST `/payments` accepts `status` from the request body (BE:854).
 
 **Writes reach the wrong rows**
 5. `/partial` updates **every invoice for the patient**: `WHERE patient_id = $1 OR id = $2` (BE:1793-1795). (D08)
-6. `confirm-walk-in` updates every Unconfirmed payment for the patient (BE:743).
+6. `confirm-walk-in` sets status and amount on every payment of the encounter, Completed ones included, and on every Unconfirmed payment the patient has (BE:739-744).
 7. `/outstanding/settle` uses the client's `patientId` for the payment row and roll-up, and checks the balance outside the transaction (BE:1605-1658). (D11, D13)
 
 **Broken or missing paths**
