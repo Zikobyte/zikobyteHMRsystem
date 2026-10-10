@@ -18,6 +18,8 @@ Use Bun as the command runner (`bun run <script>`, `bun test`). The `package.jso
 
 ## Architecture
 
+overall system design can be found in the `SYSTEM_DESIGN_GUIDE.md` in the `/docs` directory
+
 - `server.ts` is the composition root: mounts middleware, route modules under `/api/<feature>` (auth, users, patients, payments, exports, verify-identity, notifications, hr, nursing), inline audit-log endpoints, the WS server (JWT-authenticated via the first payload / `?token=`), then Vite (dev) or `dist` static files (prod). API routes must stay mounted before the frontend catch-all.
 - Backend (`src/backend`):
   - Feature folders under `routes/<feature>/`: `auth`, `users` and `patients` follow `routes → controller → service → repository`, plus `validator` and `constants`. `payments` has `*.routes.ts` and a validator. `hr`, `nursing`, `notifications` and `exports` are a single `*.routes.ts`, and `verify-identity` is a single file in `routes/`. Audit-log and `/api/maintenance/*` endpoints live inline in `server.ts`.
